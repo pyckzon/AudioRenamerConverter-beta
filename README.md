@@ -16,6 +16,8 @@ Aplicación de consola Java 17 para Windows que:
 12. Si existen nombres duplicados dentro de una misma carpeta, agrega `(2)`, `(3)`, etc.
 13. Nunca modifica ni elimina los archivos originales.
 
+¿Por qué a MP3? Por nostalgia porsupuesto!
+
 ## Requisitos
 
 - Windows 10/11
