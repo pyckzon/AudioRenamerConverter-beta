@@ -57,9 +57,9 @@ public class Mp3ConversionService {
      */
     ConversionSummary convert(Path sourceDir, Path destDir, ProgressListener listener)
             throws IOException, InterruptedException {
-        ensureFfmpegAvailable(sourceDir, destDir);
+        ensureFfmpegAvailable();
 
-        List<Path> audioFiles = listAudioFiles(sourceDir, destDir);
+        List<Path> audioFiles = listAudioFiles(sourceDir);
         if (audioFiles.isEmpty()) {
             return new ConversionSummary(0, 0, List.of());
         }
@@ -91,7 +91,7 @@ public class Mp3ConversionService {
      *
      * @return {@code null} on success, or a human readable reason when the file was skipped.
      */
-    private String convertSingleFile(Path audioFile, Path destDir) throws IOException {
+    String convertSingleFile(Path audioFile, Path destDir) throws IOException {
         String outputName = stripExtension(audioFile.getFileName().toString()) + ".mp3";
         Path outputFile = destDir.resolve(outputName);
 
@@ -139,7 +139,7 @@ public class Mp3ConversionService {
 
     // ----------------------------------------------------------------------
 
-    private List<Path> listAudioFiles(Path sourceDir, Path destDir) throws IOException {
+    private List<Path> listAudioFiles(Path sourceDir) throws IOException {
         List<Path> files = new ArrayList<>();
         try (Stream<Path> stream = Files.list(sourceDir)) {
             stream.filter(Files::isRegularFile)
@@ -150,7 +150,7 @@ public class Mp3ConversionService {
         return files;
     }
 
-    private boolean isSupported(String fileName) {
+    boolean isSupported(String fileName) {
         int dot = fileName.lastIndexOf('.');
         if (dot < 0 || dot == fileName.length() - 1) {
             return false;
@@ -167,7 +167,7 @@ public class Mp3ConversionService {
         }
     }
 
-    private void ensureFfmpegAvailable(Path sourceDir, Path destDir) {
+    private void ensureFfmpegAvailable() {
         if (isFfmpegAvailable()) {
             return;
         }
@@ -199,9 +199,11 @@ public class Mp3ConversionService {
         }
     }
 
-    private String stripExtension(String fileName) {
+    String stripExtension(String fileName) {
         int dot = fileName.lastIndexOf('.');
-        return dot < 0 ? fileName : fileName.substring(0, dot);
+        // Dot-prefixed names (like ".gitignore") have no extension; keeping the dot
+        // would strip their whole name and generate(".mp3") outputs.
+        return dot <= 0 ? fileName : fileName.substring(0, dot);
     }
 
     private String readProcessOutput(Process process) throws IOException {
