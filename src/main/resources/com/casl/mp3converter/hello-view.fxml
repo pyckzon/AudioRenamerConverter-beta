@@ -6,6 +6,7 @@
 <?import javafx.scene.control.ProgressBar?>
 <?import javafx.scene.layout.ColumnConstraints?>
 <?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Region?>
 <?import javafx.scene.layout.VBox?>
 
@@ -39,5 +40,10 @@
 
     <ProgressBar fx:id="progressBar" maxWidth="Infinity" progress="0.0"/>
     <Label fx:id="statusLabel" text="Listo." style="-fx-text-fill: gray;"/>
-    <Region/>
+
+    <HBox alignment="CENTER_RIGHT">
+        <Region HBox.hgrow="ALWAYS"/>
+        <Label fx:id="versionLabel" text="MP3Converter version 1.0.0"
+               style="-fx-font-size: 10px; -fx-text-fill: gray;"/>
+    </HBox>
 </VBox>
