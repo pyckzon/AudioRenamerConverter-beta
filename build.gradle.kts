@@ -55,6 +55,7 @@ jlink {
         installerName = "mp3Converter"
         appVersion = "1.0"
         vendor = "casl"
+        icon = file("nuevo-logo.ico").absolutePath
         // The app-image output contains mp3Converter.exe ready to execute;
         // installer packages (msi/exe) additionally require the WiX toolset.
         imageOptions = listOf()
