@@ -14,6 +14,7 @@ repositories {
 }
 
 val junitVersion = "5.12.1"
+val junitPlatformVersion = "1.12.1"
 
 java {
     toolchain {
@@ -37,11 +38,42 @@ javafx {
 
 dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter-api:${junitVersion}")
+    testImplementation("org.junit.jupiter:junit-jupiter-engine:${junitVersion}")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:${junitVersion}")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:${junitPlatformVersion}")
 }
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+// Unit tests: they must be fast, deterministic and run on every build.
+tasks.test {
+    useJUnitPlatform {
+        excludeTags("integration")
+    }
+}
+
+// Blackbox tests: the tests are compiled and run on the classpath,
+// which keeps the main module-info of the application untouched.
+tasks.compileTestJava {
+    modularity.inferModulePath.set(false)
+}
+
+// Integration test task ("special file"): it really converts files with ffmpeg.
+// The check task depends on it, so any change that breaks it fails the build.
+val integrationTest = tasks.register<Test>("integrationTest") {
+    group = "verification"
+    description = "Ejecuta las pruebas de integración (convierten archivos reales con ffmpeg)."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags("integration")
+    }
+}
+
+tasks.check {
+    dependsOn(integrationTest)
 }
 
 jlink {
