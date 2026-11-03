@@ -1,146 +1,47 @@
-# Audio Renamer + MP3 Converter
+# mp3Converter — Portfolio multi-proyecto
 
-Aplicación de consola Java 17 para Windows que:
+Un solo repositorio con 3 proyectos Java de portfolio. Todos comparten la lógica de
+conversión (módulo `core`, ffmpeg externo vía ProcessBuilder):
 
-1. Pide una carpeta origen.
-2. Busca archivos de audio de forma recursiva, incluyendo subcarpetas.
-3. Lee `artist` y `title` con FFprobe.
-4. Elimina un sufijo final ` - Topic` del artista, sin importar mayúsculas/minúsculas.
-5. Genera el nombre estándar `Artista - Título.mp3`.
-6. Para formatos con pérdida usa 192 kbps si la fuente es de 192 kbps o menor/desconocida.
-7. Para formatos con pérdida que superan 192 kbps usa 320 kbps.
-8. Para formatos lossless (FLAC, WAV, ALAC, APE, AIFF) usa 320 kbps.
-9. Convierte a MP3 mediante FFmpeg.
-10. Copia los metadatos del archivo original mediante `-map_metadata 0`.
-11. Conserva la estructura relativa de las subcarpetas dentro de la carpeta destino.
-12. Si existen nombres duplicados dentro de una misma carpeta, agrega `(2)`, `(3)`, etc.
-13. Nunca modifica ni elimina los archivos originales.
+| Módulo | Proyecto | Versión | Estado |
+|--------|----------|---------|--------|
+| `app-v1-desktop` | MP3Converter Desktop | 1.0.0 | Activo (estado histórico, sin cambios) |
+| `app-v2-freemium` | MP3Converter Freemium (92 kbps, watermark, compra mock + activación Pro) | 2.0.0 | En desarrollo |
+| `app-v3-saas` | MP3Converter SaaS (suscripción mensual/anual) | 3.0.0 | Borrador del plan |
 
 ## Requisitos
+- **Java 21** (JDK: <https://adoptium.net/>) para compilar y ejecutar.
+- **ffmpeg** en el PATH del sistema (`winget install ffmpeg`) para convertir el audio.
 
-- Windows 10/11
-- Java 17+
-- Maven 3.9+
-- FFmpeg + FFprobe en PATH
+## Comandos
+```bash
+./gradlew test        # unitarios de todos los módulos (rápidos)
+./gradlew check       # unitarios + integración (ffmpeg real) de todos los módulos
 
-Comprobar:
-
-```powershell
-java -version
-mvn -version
-ffmpeg -version
-ffprobe -version
+./gradlew :app-v1-desktop:jpackageImage   # genera el .exe de la v1
+./build-exe.bat        # equivalente, vía script (variante por defecto: v1)
+./build-exe.ps1 -App v2    # otras variantes cuando existan (v2 → app-v2-freemium)
 ```
 
-## Compilar
+El ejecutable queda en `app-v1-desktop\build\jpackage\mp3Converter\mp3Converter.exe`
+(autocontenido: no requiere Java instalado).
 
-Desde la raíz del proyecto:
-
-```powershell
-mvn clean package
+## Estructura del repositorio
+```
+mp3Converter/
+├── core/                  ← lib compartida (lógica de conversión)
+├── app-v1-desktop/        ← Proyecto 1: MP3Converter Desktop v1.0.0 (JavaFX + jpackage)
+├── app-v2-freemium/       ← Proyecto 2: v2.0.0 pay-to-pro (próximo)
+├── app-v3-saas/           ← Proyecto 3: v3.0.0 SaaS (futuro)
+├── docs/                  ← PLAN_MAESTRO.md y documentación
+├── parked/                ← código aparcado (no entra en el build)
+├── build-exe.bat / build-exe.ps1   ← empaquetado por variante
+├── settings.gradle.kts
+└── build.gradle.kts       ← raíz (multi-módulo Gradle)
 ```
 
-El JAR ejecutable queda en:
+## Documentación adicional
+- Plan de acción completo (fases, características, pruebas y riesgos): `docs/PLAN_MAESTRO.md`.
 
-```text
-target\audio-renamer-converter-1.0.0.jar
-```
-
-Ejecutar:
-
-```powershell
-java -jar target\audio-renamer-converter-1.0.0.jar
-```
-
-## Crear EXE
-
-Con JDK 17+ y `jpackage`:
-
-```powershell
-jpackage `
-  --type exe `
-  --name AudioRenamerConverter `
-  --input target `
-  --main-jar audio-renamer-converter-1.0.0.jar `
-  --main-class com.casl.audiotools.Main `
-  --win-console `
-  --dest dist
-```
-
-Esto genera un instalador `.exe`.
-
-## Política de calidad
-
-El programa aplica esta regla:
-
-- MP3/AAC/OGG/OPUS/WMA/etc. <= 192 kbps -> MP3 192 kbps
-- MP3/AAC/OGG/OPUS/WMA/etc. > 192 kbps -> MP3 320 kbps
-- FLAC/WAV/ALAC/APE/AIFF -> MP3 320 kbps
-
-Los formatos lossless se envían directamente a 320 kbps porque su bitrate reportado no es una medida comparable con el bitrate de un formato con pérdida.
-
-## Estructura de carpetas
-
-La estructura relativa de la carpeta origen se conserva en destino.
-
-Ejemplo:
-
-```text
-ORIGEN
-├── Rock
-│   ├── archivo1.flac
-│   └── archivo2.m4a
-└── Pop
-    └── archivo3.mp3
-```
-
-produce:
-
-```text
-DESTINO
-├── Rock
-│   ├── Artista - Cancion1.mp3
-│   └── Artista - Cancion2.mp3
-└── Pop
-    └── Artista - Cancion3.mp3
-```
-
-Los archivos originales permanecen intactos.
-
-## Metadatos
-
-FFmpeg conserva los metadatos compatibles mediante:
-
-```text
--map_metadata 0
-```
-
-El nombre del archivo se construye específicamente desde:
-
-```text
-artist + " - " + title
-```
-
-El campo de artista se limpia con:
-
-```text
-(?i)\s*-\s*Topic\s*$
-```
-
-Por ejemplo:
-
-```text
-Artist - Topic
-```
-
-se convierte en:
-
-```text
-Artist
-```
-
-y el archivo final:
-
-```text
-Artist - Cancion.mp3
-```
+## Licencia
+MIT (ver `LICENSE`).
