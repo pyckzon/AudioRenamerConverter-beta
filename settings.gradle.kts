@@ -2,4 +2,4 @@
 // Modulos: core (libreria compartida), app-v1-desktop (v1.0.0), app-v2-freemium (fase 2+).
 rootProject.name = "mp3Converter"
 
-include("core", "app-v1-desktop")
+include("core", "app-v1-desktop", "app-v2-freemium")

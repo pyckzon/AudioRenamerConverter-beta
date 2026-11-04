@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -272,6 +273,64 @@ class Mp3ConversionServiceIntegrationTest {
             return true;
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    @Test
+    @DisplayName("el free tier inserta el watermark audible: la salida dura fuente + 2x asset")
+    void freeTier_aplicaWatermarkAudible(@TempDir Path sourceDir, @TempDir Path destDir) throws Exception {
+        requireFfmpeg();
+        var wmAsset = extractWatermarkAsset();
+        assumeTrue(wmAsset != null, "asset del watermark no disponible: se omite la prueba");
+
+        double sourceSeconds = 1.5;
+        createWav(sourceDir, "pista.wav", sourceSeconds);
+
+        var gate = new Mp3ConversionService(QualityPolicy.freeTier92(), wmAsset, Set.of());
+        gate.convert(sourceDir, destDir, (p, t, f) -> { });
+
+        Path freeOutput = destDir.resolve("pista.mp3");
+        double watermarkSeconds = probeDurationSeconds(wmAsset);
+        double freeDuration = probeDurationSeconds(freeOutput);
+        double expectedMinimum = sourceSeconds + watermarkSeconds * 2 - 0.5;
+        double expectedMaximum = sourceSeconds + watermarkSeconds * 2 + 1.0;
+
+        assertTrue(freeDuration >= expectedMinimum && freeDuration <= expectedMaximum,
+                String.format("la salida free debe tener el watermark al inicio y al fin " +
+                        "(%.2f ≈ %.2f + 2x%.2f). Real: %.2f", freeDuration, sourceSeconds, watermarkSeconds, freeDuration));
+    }
+
+    /** Extracts the watermark wav from the module resources to a temp file (or null). */
+    static Path extractWatermarkAsset() {
+        try (var in = Mp3ConversionServiceIntegrationTest.class
+                .getResourceAsStream("/audio/watermark-mp3converter.wav")) {
+            if (in == null) {
+                return null;
+            }
+            Path temp = Files.createTempFile("wm-", ".wav");
+            temp.toFile().deleteOnExit();
+            Files.copy(in, temp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            return temp;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** Seconds of media duration via ffprobe; -1 when unavailable. */
+    static double probeDurationSeconds(Path media) {
+        try {
+            Process p = new ProcessBuilder("ffprobe", "-v", "quiet",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    media.toAbsolutePath().toString())
+                    .redirectErrorStream(true).start();
+            if (!p.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return -1;
+            }
+            return Double.parseDouble(new String(p.getInputStream().readAllBytes()).strip());
+        } catch (Exception e) {
+            return -1;
         }
     }
 

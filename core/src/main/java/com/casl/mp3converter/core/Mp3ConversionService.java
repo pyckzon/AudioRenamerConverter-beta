@@ -33,15 +33,40 @@ public class Mp3ConversionService {
     /** Per-file timeout so a broken source file can not hang the whole process forever. */
     private static final long FILE_TIMEOUT_MINUTES = 15;
 
+    // --- freemium configuration (Plan fase 2) ----------------------------------
+
     /** Encoding quality policy; the default keeps the historical v1.0.0 VBR quality. */
     private final QualityPolicy qualityPolicy;
 
+    /** Optional audible watermark asset; non-null forces both-prepend+append insertion. */
+    private final Path watermarkAsset;
+
+    /** Extensions that this tier can NOT convert (e.g. opus in the free tier). */
+    private final Set<String> blockedExtensions;
+
     public Mp3ConversionService() {
-        this(QualityPolicy.full());
+        this(QualityPolicy.full(), null, Set.of());
     }
 
     public Mp3ConversionService(QualityPolicy qualityPolicy) {
+        this(qualityPolicy, null, Set.of());
+    }
+
+    /** Full freemium constructor: fixed/limited quality, watermark and blocked extensions. */
+    public Mp3ConversionService(QualityPolicy qualityPolicy, Path watermarkAsset, Set<String> blockedExtensions) {
         this.qualityPolicy = java.util.Objects.requireNonNull(qualityPolicy, "qualityPolicy");
+        this.watermarkAsset = watermarkAsset;
+        this.blockedExtensions = Set.copyOf(java.util.Objects.requireNonNullElse(blockedExtensions, Set.<String>of()));
+    }
+
+    /**
+     * The planned free tier of app-v2: 92 kbps CBR, audible "mp3Converter" watermark
+     * at the start and end of every file, .opus blocked (requires the Pro version).
+     *
+     * @param watermarkAsset extracted watermark audio file (.wav) beside/on disk.
+     */
+    public static Mp3ConversionService freeTier(Path watermarkAsset) {
+        return new Mp3ConversionService(QualityPolicy.freeTier92(), watermarkAsset, Set.of("opus"));
     }
 
     /** Result of one conversion run. */
@@ -94,7 +119,9 @@ public class Mp3ConversionService {
             Path audioFile = audioFiles.get(i);
             listener.onProgress(i + 1, audioFiles.size(), audioFile.getFileName().toString());
 
-            String result = convertSingleFile(audioFile, destDir, outputsInRun);
+            // Tier gate: blocked extensions are listed and reported, ffmpeg NEVER runs for them.
+            String blockedReason = blockedExtensionReason(audioFile);
+            String result = blockedReason != null ? blockedReason : convertSingleFile(audioFile, destDir, outputsInRun);
             if (result == null) {
                 converted++;
             } else {
@@ -105,6 +132,22 @@ public class Mp3ConversionService {
             }
         }
         return new ConversionSummary(converted, skipped, List.copyOf(skippedFiles));
+    }
+
+    /** Tier rule: files with blocked extensions stay after the scan and never reach ffmpeg. */
+    String blockedExtensionReason(Path audioFile) {
+        if (blockedExtensions.isEmpty()) {
+            return null;
+        }
+        int dot = audioFile.getFileName().toString().lastIndexOf('.');
+        if (dot < 0 || dot == audioFile.getFileName().toString().length() - 1) {
+            return null;
+        }
+        String extension = audioFile.getFileName().toString().substring(dot + 1).toLowerCase(Locale.ROOT);
+        return blockedExtensions.contains(extension)
+                ? "requiere la versión Pro: los archivos ." + extension
+                  + " no se pueden convertir en la versión gratuita."
+                : null;
     }
 
     /**
@@ -134,8 +177,8 @@ public class Mp3ConversionService {
         outputsInRun.add(outputFile.toAbsolutePath());
 
         // The quality policy injects the encoding args: no free-tier rule may be bypassed here.
-        List<String> command = buildFfmpegCommand(
-                audioFile.toAbsolutePath(), outputFile.toAbsolutePath(), qualityPolicy);
+        List<String> command = buildCommand(
+                audioFile.toAbsolutePath(), outputFile.toAbsolutePath());
 
         try {
             ProcessBuilder builder = new ProcessBuilder(command)
@@ -178,6 +221,49 @@ public class Mp3ConversionService {
                 "-loglevel", "error",
                 "-y",                          // overwrite silently; we validated the target
                 "-i", input.toString(),
+                "-codec:a", "libmp3lame"
+        ));
+        command.addAll(policy.encodingArgs());
+        command.add(output.toString());
+        return List.copyOf(command);
+    }
+
+    /** Command of this service instance: free tier inserts the watermark; full keeps plain. */
+    private List<String> buildCommand(Path input, Path output) {
+        return watermarkAsset == null
+                ? buildFfmpegCommand(input, output, qualityPolicy)
+                : buildFfmpegCommandWithWatermark(input, output, qualityPolicy, watermarkAsset);
+    }
+
+    /**
+     * Freemium command (fase 2.2): audible watermark inserted at the START and END of the
+     * result. One single ffmpeg pass: the source and the watermark asset (normalized mono/
+     * stereo WAV) are merged by filter_complex concat, with fade in/out on the asset so the
+     * audio does not pop in/out. Encoding args of the policy stay mandatory: free tier is
+     * ALWAYS "-b:a 92k" even inside the watermark pipeline.
+     */
+    public static List<String> buildFfmpegCommandWithWatermark(Path input, Path output,
+                                                               QualityPolicy policy, Path watermarkAsset) {
+        java.util.Objects.requireNonNull(policy, "policy");
+        java.util.Objects.requireNonNull(watermarkAsset, "watermarkAsset");
+
+        // Asset must not click on/off: 250 ms triangular fades on both ends.
+        String filter = "[0:a]aformat=sample_fmts=s16:sample_rates=44100:channel_layouts=stereo[s0];"
+                + "[1:a]aformat=sample_fmts=s16:sample_rates=44100:channel_layouts=stereo,"
+                + "afade=t=in:d=0.25:curve=tri,areverse,afade=t=in:d=0.25:curve=tri,areverse[w];"
+                + "[s0][w]concat=n=2:v=0:a=1[c1];"
+                + "[c1][w]concat=n=2:v=0:a=1[out]";
+
+        List<String> command = new ArrayList<>(List.of(
+                "ffmpeg",
+                "-hide_banner",
+                "-nostdin",
+                "-loglevel", "error",
+                "-y",                          // overwrite silently; we validated the target
+                "-i", input.toString(),
+                "-i", watermarkAsset.toString(),
+                "-filter_complex", filter,
+                "-map", "[out]",
                 "-codec:a", "libmp3lame"
         ));
         command.addAll(policy.encodingArgs());
