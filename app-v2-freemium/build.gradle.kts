@@ -37,6 +37,27 @@ javafx {
 
 dependencies {
     implementation(project(":core"))
+
+    val junitVersion = "5.12.1"
+    val junitPlatformVersion = "1.12.1"
+    testImplementation("org.junit.jupiter:junit-jupiter-api:${junitVersion}")
+    testImplementation("org.junit.jupiter:junit-jupiter-engine:${junitVersion}")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:${junitVersion}")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:${junitPlatformVersion}")
+}
+
+tasks.withType<Test> {
+    useJUnitPlatform()
+    testLogging.showStandardStreams = true
+}
+
+// Blackbox tests on classpath (same convention as core, no module-path touch).
+tasks.compileTestJava {
+    modularity.inferModulePath.set(false)
+}
+
+tasks.withType<JavaCompile> {
+    options.encoding = "UTF-8"
 }
 
 jlink {

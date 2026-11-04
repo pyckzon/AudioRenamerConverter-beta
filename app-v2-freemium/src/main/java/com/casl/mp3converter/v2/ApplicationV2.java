@@ -17,6 +17,14 @@ public class ApplicationV2 extends Application {
 
     @Override
     public void init() {
+        // Fase 3 (requisito 2.4): el tier arranca desde el binario de licencia junto al .exe.
+        // Fallido/corrupto/ausente siempre degrada a FREE (nunca lanza).
+        try {
+            com.casl.mp3converter.v2.freemium.FeatureGate.refreshFromLicenseFile();
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "No se pudo leer la licencia: se continúa en modo gratuito", e);
+        }
+
         // Last-resort safety net: log and warn instead of crashing silently.
         Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
             LOGGER.log(Level.SEVERE, "Error no controlado en " + thread.getName(), error);
@@ -35,7 +43,9 @@ public class ApplicationV2 extends Application {
         try {
             FXMLLoader fxmlLoader = new FXMLLoader(ApplicationV2.class.getResource("hello-view.fxml"));
             Scene scene = new Scene(fxmlLoader.load(), 480, 340);
-            stage.setTitle("Convertidor a MP3 (versión gratuita)");
+            stage.setTitle(com.casl.mp3converter.v2.freemium.FeatureGate.isPro()
+                    ? "Convertidor a MP3 (PRO)"
+                    : "Convertidor a MP3 (versión gratuita)");
             applyWindowIcon(stage);
             stage.setScene(scene);
             stage.show();

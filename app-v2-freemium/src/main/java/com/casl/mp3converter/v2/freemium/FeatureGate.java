@@ -3,6 +3,7 @@ package com.casl.mp3converter.v2.freemium;
 import com.casl.mp3converter.core.Mp3ConversionService;
 import com.casl.mp3converter.core.QualityPolicy;
 import com.casl.mp3converter.core.WatermarkAsset;
+import com.casl.mp3converter.core.license.LicenseVerifier;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -17,10 +18,20 @@ import java.util.Set;
  */
 public final class FeatureGate {
 
-    /** Estado del modo Pro; la Fase 3/4 lo enciende desde el archivo binario de licencia. */
+    /** Estado del modo Pro; la Fase 3/5 lo enciende desde el archivo de licencia/activación. */
     private static volatile boolean proEnabled = false;
 
     private FeatureGate() {
+    }
+
+    /**
+     * Fase 3 (requisito 2.4): al abrir el ejecutable se lee el binario de licencia
+     * ({@code mp3converter.lic}) junto al .exe y se decide el tier inicial.
+     * La Fase 5 reutilizará esta misma puerta para la activación "en caliente".
+     */
+    public static void refreshFromLicenseFile() {
+        LicenseVerifier.LicenseState state = LicenseVerifier.verify();
+        setProEnabled(state.tier() == LicenseVerifier.Tier.PRO);
     }
 
     public static boolean isPro() {
