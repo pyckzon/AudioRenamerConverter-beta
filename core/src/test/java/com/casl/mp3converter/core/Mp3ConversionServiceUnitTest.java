@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -39,7 +40,7 @@ class Mp3ConversionServiceUnitTest {
             }
 
             @Override
-            String convertSingleFile(Path audioFile, Path destDir) throws IOException {
+            String convertSingleFile(Path audioFile, Path destDir, Set<Path> outputsInRun) {
                 return stubbedConversionResult;
             }
         };
@@ -65,7 +66,10 @@ class Mp3ConversionServiceUnitTest {
                 () -> assertTrue(service.isSupported("album.flac")),
                 () -> assertTrue(service.isSupported("voz.m4a")),
                 () -> assertTrue(service.isSupported("podcast.ogg")),
-                () -> assertTrue(service.isSupported("dictado.wma"))
+                () -> assertTrue(service.isSupported("dictado.wma")),
+                // .opus: newly supported since this branch (before it was silently filtered).
+                () -> assertTrue(service.isSupported("cancion.opus")),
+                () -> assertTrue(service.isSupported("CANCION.OPUS"))
         );
     }
 
@@ -166,6 +170,62 @@ class Mp3ConversionServiceUnitTest {
                 () -> assertEquals(1, summary.converted(), "solo cancion.wav se debe convertir"),
                 () -> assertEquals(0, summary.skipped()),
                 () -> assertEquals(List.of("1/1:cancion.wav"), calls)
+        );
+    }
+
+    @Test
+    @DisplayName("convert escanea recursivamente las subcarpetas de la carpeta origen")
+    void convert_escaneaSubcarpetas(@TempDir Path sourceDir) throws Exception {
+        var sub1 = Files.createDirectories(sourceDir.resolve("rock"));
+        var sub2 = Files.createDirectories(sourceDir.resolve("rock/80s"));
+        Files.writeString(sub1.resolve("cancion.wav"), "en subcarpeta");
+        Files.writeString(sub2.resolve("otra.wav"), "en subcarpeta anidada");
+        Files.writeString(sourceDir.resolve("raiz.wav"), "en raiz");
+        Files.writeString(sub2.resolve("no.txt"), "no es audio");
+
+        var spy = serviceWithFfmpeg(true, null);
+
+        var summary = spy.convert(sourceDir, sourceDir, (p, t, f) -> { });
+
+        assertEquals(3, summary.converted(),
+                "raiz.wav, rock/cancion.wav y rock/80s/otra.wav se deben convertir");
+    }
+
+    @Test
+    @DisplayName("colisión de mismo nombre en subcarpetas distintas no se pisa: sale nombre (2)")
+    void convert_colisionMismoNombre_generaSufijoConsecutivo(@TempDir Path sourceDir, @TempDir Path destDir)
+            throws Exception {
+        var subA = Files.createDirectories(sourceDir.resolve("a"));
+        var subB = Files.createDirectories(sourceDir.resolve("b"));
+        Files.writeString(subA.resolve("pista.wav"), "primera");
+        Files.writeString(subB.resolve("pista.wav"), "segunda");
+        Files.writeString(sourceDir.resolve("pista.wav"), "en raiz");
+
+        var spy = serviceWithFfmpeg(true, null);
+        var outputs = new ArrayList<String>();
+
+        // stub que imita el comportamiento real: crea el .mp3 destino con su nombre
+        var stub = new Mp3ConversionService() {
+            @Override
+            boolean isFfmpegAvailable() { return true; }
+
+            @Override
+            String convertSingleFile(Path audioFile, Path dir, Set<Path> outputsInRun) throws IOException {
+                String name = stripExtension(audioFile.getFileName().toString()) + ".mp3";
+                Path out = uniqueOutputPath(dir, name, audioFile, outputsInRun);
+                outputsInRun.add(out.toAbsolutePath());
+                outputs.add(out.getFileName().toString());
+                return null;
+            }
+        };
+        stub.convert(sourceDir, destDir, (p, t, f) -> { });
+
+        assertAll(
+                () -> assertEquals(3, outputs.size()),
+                () -> assertEquals(3, new ArrayList<>(outputs).stream().distinct().count()),
+                () -> assertTrue(outputs.contains("pista.mp3")),
+                () -> assertTrue(outputs.contains("pista (2).mp3")),
+                () -> assertTrue(outputs.contains("pista (3).mp3"))
         );
     }
 

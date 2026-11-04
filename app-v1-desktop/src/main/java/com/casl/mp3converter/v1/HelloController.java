@@ -10,6 +10,9 @@ import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.TextArea;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.VBox;
 import javafx.scene.control.ProgressBar;
 import javafx.stage.DirectoryChooser;
 
@@ -181,14 +184,46 @@ public class HelloController {
         }
         statusLabel.setText(text);
 
-        StringBuilder message = new StringBuilder()
-                .append("Convertidos: ").append(summary.converted()).append('\n')
-                .append("Omitidos: ").append(summary.skipped());
-        if (!summary.skippedFiles().isEmpty()) {
-            message.append("\n\nProblemas:");
-            summary.skippedFiles().forEach(reason -> message.append("\n  • ").append(reason));
+        if (summary.skippedFiles().isEmpty()) {
+            showInformation("Proceso completado", text);
+        } else {
+            showFailedFilesDialog(summary);
         }
-        showInformation("Proceso completado", message.toString());
+    }
+
+    /**
+     * Dialog for the files that could not be converted: a scrollable, non-editable
+     * text block (so long problem lists remain readable) with a single "Aceptar"
+     * button to close it. Failure of the dialog itself never crashes the app.
+     */
+    private void showFailedFilesDialog(Mp3ConversionService.ConversionSummary summary) {
+        try {
+            var header = String.format("Convertidos: %d — Omitidos: %d. Detalle de los archivos con problemas:",
+                    summary.converted(), summary.skipped());
+
+            var details = new TextArea();
+            details.setEditable(false);
+            details.setWrapText(true);
+            details.setText(String.join("\n", summary.skippedFiles()));
+            // So the block gets the dialog's extra height instead of a fixed small box.
+            VBox.setVgrow(details, Priority.ALWAYS);
+
+            var dialog = new javafx.scene.control.Dialog<Void>();
+            var aceptar = new javafx.scene.control.ButtonType("Aceptar",
+                    javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+            dialog.setTitle("Proceso completado con omisiones");
+            dialog.setHeaderText(header);
+            dialog.getDialogPane().setContent(details);
+            dialog.getDialogPane().getButtonTypes().add(aceptar);
+            dialog.setResizable(true);
+            dialog.getDialogPane().setMinWidth(520);
+            dialog.initOwner(sourcePathLabel.getScene().getWindow());
+            dialog.showAndWait();
+        } catch (Exception e) { // Fallback: very defensive, same spirit as showAlert.
+            LOGGER.log(Level.SEVERE, "No se pudo mostrar el detalle de omisiones", e);
+            showInformation("Proceso completado",
+                    "Convertidos: " + summary.converted() + "\nOmitidos: " + summary.skipped());
+        }
     }
 
     private String buildErrorMessage(Throwable error) {

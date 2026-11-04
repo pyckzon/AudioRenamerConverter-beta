@@ -34,6 +34,8 @@ tasks.withType<JavaCompile> {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // Depuración: los motivos de omisión se loguean en WARNING y aparecen en consola.
+    testLogging.showStandardStreams = true
 }
 
 // Unit tests: rapidos y deterministas, corren en cada build.

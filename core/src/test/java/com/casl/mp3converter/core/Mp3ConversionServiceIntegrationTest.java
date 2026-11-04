@@ -170,6 +170,112 @@ class Mp3ConversionServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("convierte archivos .opus a MP3 (antes se ignoraban silenciosamente)")
+    void convierteOpus_aMp3(@TempDir Path sourceDir, @TempDir Path destDir) throws Exception {
+        requireFfmpeg();
+
+        // Synthetic opus source: 440 Hz tone encoded with libopus (skip if the
+        // encoder is missing in this ffmpeg build - NEVER fail for it).
+        Path opus = sourceDir.resolve("tono.opus");
+        boolean generated = generateOpus(opus);
+        assumeTrue(generated, "libopus no disponible en esta build de ffmpeg: se omite la prueba");
+        assumeTrue(Files.size(opus) > 0, "la generacion del opus sintetico fallo: se omite la prueba");
+
+        var summary = service.convert(sourceDir, destDir, (p, t, f) -> { });
+
+        assertAll(
+                () -> assertEquals(1, summary.converted()),
+                () -> assertEquals(0, summary.skipped()),
+                () -> assertTrue(Files.size(destDir.resolve("tono.mp3")) > 1000)
+        );
+    }
+
+    /** Generates a small valid .opus file with ffmpeg; returns false if the encoder is absent. */
+    private static boolean generateOpus(Path target) {
+        try {
+            Process p = new ProcessBuilder("ffmpeg",
+                    "-hide_banner", "-loglevel", "error", "-y",
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=0.5",
+                    "-c:a", "libopus", "-b:a", "96k",
+                    target.toAbsolutePath().toString())
+                    .redirectErrorStream(true)
+                    .start();
+            if (!p.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return false;
+            }
+            return p.exitValue() == 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @Test
+    @DisplayName("escanea subcarpetas recursivamente y resuelve colisiones de nombre en destino")
+    void escaneaSubcarpetas_yResuelveColisiones(@TempDir Path sourceDir, @TempDir Path destDir) throws Exception {
+        requireFfmpeg();
+        var subA = Files.createDirectories(sourceDir.resolve("album"));
+        var subB = Files.createDirectories(sourceDir.resolve("album/mono"));
+        createWav(subA, "pista.wav", 0.4);
+        createWav(subB, "pista.wav", 0.4);
+
+        var summary = service.convert(sourceDir, destDir, (p, t, f) -> { });
+
+        assertAll(
+                () -> assertEquals(2, summary.converted(), "ambas copias de pista.wav se deben convertir"),
+                () -> assertEquals(0, summary.skipped()),
+                () -> assertTrue(Files.exists(destDir.resolve("pista.mp3"))),
+                () -> assertTrue(Files.exists(destDir.resolve("pista (2).mp3")),
+                        "la segunda pista homónima debe tener sufijo en vez de pisar el archivo")
+        );
+    }
+
+    @Test
+    @DisplayName("el MP3 resultante se nombra con el artista de los metadatos: '<artista> - <titulo>'")
+    void nombraSalida_conArtistaDeMetadatos(@TempDir Path sourceDir, @TempDir Path destDir) throws Exception {
+        requireFfmpeg();
+
+        // WAV sintético CON tag de artista escrito por el propio ffmpeg.
+        Path tagged = sourceDir.resolve("tema.wav");
+        boolean generated = generateWavWithMetadata(tagged, "Artista Prueba");
+        assumeTrue(generated, "no se pudo generar el WAV con metadatos: se omite la prueba");
+
+        var summary = service.convert(sourceDir, destDir, (p, t, f) -> { });
+
+        assertAll(
+                () -> assertEquals(1, summary.converted()),
+                () -> assertTrue(Files.exists(destDir.resolve("Artista Prueba - tema.mp3")),
+                        "la salida debe llamarse 'Artista Prueba - tema.mp3' con el artista de los metadatos")
+        );
+    }
+
+    /** Generates a valid PCM WAV with a 440 Hz tone and an artist tag. Returns false on ffmpeg failure. */
+    private static boolean generateWavWithMetadata(Path target, String artist) {
+        try {
+            var temp = Files.createTempFile("tagged-", ".wav");
+            temp.toFile().deleteOnExit();
+            Process p = new ProcessBuilder("ffmpeg",
+                    "-hide_banner", "-loglevel", "error", "-y",
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=0.4",
+                    "-metadata", "artist=" + artist,
+                    temp.toAbsolutePath().toString())
+                    .redirectErrorStream(true)
+                    .start();
+            if (!p.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return false;
+            }
+            if (p.exitValue() != 0 || Files.size(temp) < 1000) {
+                return false;
+            }
+            Files.move(temp, target);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @Test
     @DisplayName("convertir la carpeta vacía no lanza excepción y reporta cero archivos")
     void carpetaVacia_noFalla(@TempDir Path sourceDir, @TempDir Path destDir) {
         requireFfmpeg();

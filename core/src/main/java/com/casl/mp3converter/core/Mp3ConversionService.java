@@ -5,8 +5,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
@@ -19,14 +21,28 @@ import java.util.stream.Stream;
  */
 public class Mp3ConversionService {
 
+    private static final java.util.logging.Logger LOGGER =
+            java.util.logging.Logger.getLogger(Mp3ConversionService.class.getName());
+
     /** Human readable list of extensions this service can convert. */
-    public static final String SUPPORTED_EXTENSIONS_TEXT = "WAV, AIFF, FLAC, M4A, OGG, WMA";
+    public static final String SUPPORTED_EXTENSIONS_TEXT = "WAV, AIFF, FLAC, M4A, OGG, WMA, OPUS";
 
     private static final List<String> SUPPORTED_EXTENSIONS =
-            List.of("wav", "aif", "aiff", "flac", "m4a", "ogg", "wma");
+            List.of("wav", "aif", "aiff", "flac", "m4a", "ogg", "wma", "opus");
 
     /** Per-file timeout so a broken source file can not hang the whole process forever. */
     private static final long FILE_TIMEOUT_MINUTES = 15;
+
+    /** Encoding quality policy; the default keeps the historical v1.0.0 VBR quality. */
+    private final QualityPolicy qualityPolicy;
+
+    public Mp3ConversionService() {
+        this(QualityPolicy.full());
+    }
+
+    public Mp3ConversionService(QualityPolicy qualityPolicy) {
+        this.qualityPolicy = java.util.Objects.requireNonNull(qualityPolicy, "qualityPolicy");
+    }
 
     /** Result of one conversion run. */
     public record ConversionSummary(int converted, int skipped, List<String> skippedFiles) {
@@ -67,6 +83,9 @@ public class Mp3ConversionService {
         List<String> skippedFiles = new ArrayList<>();
         int converted = 0;
         int skipped = 0;
+        // Names already generated in THIS run: two sources with the same name (recursive
+        // scan) must not collide; outputs from previous runs are replaced instead.
+        Set<Path> outputsInRun = new HashSet<>();
 
         for (int i = 0; i < audioFiles.size(); i++) {
             if (Thread.currentThread().isInterrupted()) {
@@ -75,42 +94,48 @@ public class Mp3ConversionService {
             Path audioFile = audioFiles.get(i);
             listener.onProgress(i + 1, audioFiles.size(), audioFile.getFileName().toString());
 
-            String result = convertSingleFile(audioFile, destDir);
+            String result = convertSingleFile(audioFile, destDir, outputsInRun);
             if (result == null) {
                 converted++;
             } else {
                 skipped++;
                 skippedFiles.add(audioFile.getFileName() + ": " + result);
+                LOGGER.log(java.util.logging.Level.WARNING,
+                        "Archivo omitido {0}: {1}", new Object[]{audioFile, result});
             }
         }
         return new ConversionSummary(converted, skipped, List.copyOf(skippedFiles));
     }
 
     /**
-     * Converts one file.
+     * Converts one file without run-scoped collision tracking (single file, no batch).
      *
      * @return {@code null} on success, or a human readable reason when the file was skipped.
      */
     String convertSingleFile(Path audioFile, Path destDir) throws IOException {
-        String outputName = stripExtension(audioFile.getFileName().toString()) + ".mp3";
-        Path outputFile = destDir.resolve(outputName);
+        return convertSingleFile(audioFile, destDir, new HashSet<>());
+    }
+
+    /**
+     * Converts one file.
+     *
+     * @param outputsInRun output names already produced in the same conversion batch.
+     * @return {@code null} on success, or a human readable reason when the file was skipped.
+     */
+    String convertSingleFile(Path audioFile, Path destDir, Set<Path> outputsInRun) throws IOException {
+        // resolveOutputName returns the base name (no extension): the output is always .mp3.
+        String outputName = resolveOutputName(audioFile) + ".mp3";
+        Path outputFile = uniqueOutputPath(destDir, outputName, audioFile, outputsInRun);
 
         // If the target file is the same as the source (mp3 in and mp3 out), avoid destroying data.
         if (Files.exists(outputFile) && isSameFileOrReadOnly(audioFile, outputFile)) {
             return "el archivo de salida ya existe y es el mismo que el de origen.";
         }
+        outputsInRun.add(outputFile.toAbsolutePath());
 
-        List<String> command = List.of(
-                "ffmpeg",
-                "-hide_banner",
-                "-nostdin",
-                "-loglevel", "error",
-                "-y",                          // overwrite silently; we validated the target
-                "-i", audioFile.toAbsolutePath().toString(),
-                "-codec:a", "libmp3lame",
-                "-q:a", "2",                   // high quality VBR
-                outputFile.toAbsolutePath().toString()
-        );
+        // The quality policy injects the encoding args: no free-tier rule may be bypassed here.
+        List<String> command = buildFfmpegCommand(
+                audioFile.toAbsolutePath(), outputFile.toAbsolutePath(), qualityPolicy);
 
         try {
             ProcessBuilder builder = new ProcessBuilder(command)
@@ -139,12 +164,181 @@ public class Mp3ConversionService {
 
     // ----------------------------------------------------------------------
 
+    /**
+     * Pure builder of the ffmpeg command (unit-testable without spawning processes):
+     * {@code ffmpeg -hide_banner -nostdin -loglevel error -y -i input -codec:a libmp3lame
+     * <policy args> output}. Note "-y" keeps overwrite; the target is validated before.
+     */
+    public static List<String> buildFfmpegCommand(Path input, Path output, QualityPolicy policy) {
+        java.util.Objects.requireNonNull(policy, "policy");
+        List<String> command = new ArrayList<>(List.of(
+                "ffmpeg",
+                "-hide_banner",
+                "-nostdin",
+                "-loglevel", "error",
+                "-y",                          // overwrite silently; we validated the target
+                "-i", input.toString(),
+                "-codec:a", "libmp3lame"
+        ));
+        command.addAll(policy.encodingArgs());
+        command.add(output.toString());
+        return List.copyOf(command);
+    }
+
+    // --- Output naming: "<artist> - <title>" ------------------------------------------
+
+    /**
+     * Output file name for the resulting MP3, without extension:
+     * {@code "<artista> - <título>"} where the artist comes from the source metadata
+     * (ffprobe, format or stream tags) and the title is the original file name minus
+     * its trailing "(xxx)" portion (e.g. "cancion (152kbit_Opus).opus" → "cancion").
+     * <p>
+     * Fallback: no ffprobe or no artist tag → the historical simple name
+     * (file name minus extension, parenthetical still removed).
+     */
+    String resolveOutputName(Path audioFile) throws IOException {
+        String base = stripExtension(audioFile.getFileName().toString());
+        String title = stripTrailingParenthetical(base);
+        String artist = cleanArtist(readArtist(audioFile));
+        if (artist.isBlank()) {
+            return sanitizeWindowsFileName(title.isBlank() ? base : title);
+        }
+        return sanitizeWindowsFileName(title.isBlank() ? base : artist + " - " + title);
+    }
+
+    boolean isFfprobeAvailable() {
+        if (ffprobePresence == null) {
+            ffprobePresence = probeBinaryAvailable("ffprobe");
+        }
+        return ffprobePresence;
+    }
+
+    /** Cached once ("ffprobe -version"); the environment does not change mid-run. */
+    private Boolean ffprobePresence;
+
+    boolean probeBinaryAvailable(String binary) {
+        try {
+            Process probe = new ProcessBuilder(binary, "-version")
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            if (!probe.waitFor(10, TimeUnit.SECONDS)) {
+                probe.destroyForcibly();
+                return false;
+            }
+            return probe.exitValue() == 0;
+        } catch (IOException | InterruptedException | RuntimeException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return false;
+        }
+    }
+
+    /** Matches ffprobe plain output lines of the shape "TAG:key=value". */
+    private static final java.util.regex.Pattern TAG_LINE =
+            java.util.regex.Pattern.compile("TAG:([^=]+)=(.*)");
+
+    /** Per-file max wait for the metadata probe so a locked file can not stall the run. */
+    private static final long METADATA_TIMEOUT_SECONDS = 5;
+
+    /**
+     * Reads the artist tag of the file (format and stream tags; some containers like
+     * OGG/Opus store tags in the stream). Empty string when ffprobe is missing or the
+     * tag does not exist. Never throws for tagging problems.
+     */
+    String readArtist(Path audioFile) {
+        if (!isFfprobeAvailable()) {
+            return "";
+        }
+        List<String> command = List.of(
+                "ffprobe",
+                "-v", "quiet",
+                "-show_entries", "format_tags:stream_tags",
+                "-of", "default=noprint_wrappers=1",
+                audioFile.toAbsolutePath().toString());
+        try {
+            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            if (!process.waitFor(METADATA_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                return "";
+            }
+            if (process.exitValue() != 0) {
+                return "";
+            }
+            String output = new String(process.getInputStream().readAllBytes());
+            String artist = "";
+            String albumArtist = "";
+            for (String line : output.split("\\R")) {
+                var matcher = TAG_LINE.matcher(line.strip());
+                if (!matcher.matches()) {
+                    continue;
+                }
+                String key = matcher.group(1).toLowerCase(Locale.ROOT);
+                String value = cleanArtist(matcher.group(2));
+                if (key.equals("artist")) {
+                    if (!value.isBlank()) {
+                        return value;
+                    }
+                } else if (key.equals("album_artist") || key.equals("albumartist")) {
+                    if (albumArtist.isEmpty() && !value.isEmpty()) {
+                        albumArtist = value;
+                    }
+                }
+            }
+            return albumArtist;
+        } catch (IOException | InterruptedException | RuntimeException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return "";
+        }
+    }
+
+    /** Removes a trailing " - Topic" (YouTube Topic exports) and stray control chars. */
+    String cleanArtist(String artist) {
+        if (artist == null || artist.isBlank()) {
+            return "";
+        }
+        return artist.replace('\u0000', ' ')
+                .replaceAll("(?i)\\s*-\\s*Topic\\s*$", "")
+                .trim();
+    }
+
+    /** Strips ONE trailing "(...)" group: "Digital Love (152kbit_Opus)" → "Digital Love". */
+    String stripTrailingParenthetical(String name) {
+        if (name == null) {
+            return "";
+        }
+        return name.replaceAll("\\s*\\([^)]*\\)\\s*$", "").trim();
+    }
+
+    /** Makes any composed name safe to use as a Windows file name. */
+    String sanitizeWindowsFileName(String name) {
+        String sanitized = name == null ? "" :
+                name.replaceAll("[<>:\"/\\\\|?*]", "_")
+                        .replaceAll("\\p{Cntrl}", "_")
+                        .trim();
+        // Windows does not allow names ending with a space or period.
+        sanitized = sanitized.replaceAll("[ .]+$", "");
+        // Windows reserved device names.
+        if (sanitized.matches("(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$")) {
+            sanitized = "_" + sanitized;
+        }
+        if (sanitized.isBlank()) {
+            return "audio";
+        }
+        // Keep room for the .mp3 extension and Windows path length limits.
+        return sanitized.length() > 200 ? sanitized.substring(0, 200).trim() : sanitized;
+    }
+
     private List<Path> listAudioFiles(Path sourceDir) throws IOException {
         List<Path> files = new ArrayList<>();
-        try (Stream<Path> stream = Files.list(sourceDir)) {
+        // Recursive walk: scans the source folder and every subfolder for audio files.
+        try (Stream<Path> stream = Files.walk(sourceDir)) {
             stream.filter(Files::isRegularFile)
                   .filter(p -> isSupported(p.getFileName().toString()))
-                  .sorted(Comparator.comparing(p -> p.getFileName().toString().toLowerCase(Locale.ROOT)))
+                  .sorted(Comparator.comparing(p -> p.toString().toLowerCase(Locale.ROOT)))
                   .forEach(files::add);
         }
         return files;
@@ -157,6 +351,22 @@ public class Mp3ConversionService {
         }
         String extension = fileName.substring(dot + 1).toLowerCase(Locale.ROOT);
         return SUPPORTED_EXTENSIONS.contains(extension);
+    }
+
+    /**
+     * Resolves the output path for {@code outputName} inside {@code destDir}.
+     * Collisions only apply to names produced in the same run ({@code outputsInRun}):
+     * files left by previous runs are overwritten (same behavior as v1.0.0), while two
+     * sources with the same name in one run get "nombre (2).mp3", "nombre (3).mp3", etc.
+     */
+    Path uniqueOutputPath(Path destDir, String outputName, Path source, Set<Path> outputsInRun) throws IOException {
+        Path candidate = destDir.resolve(outputName);
+        int counter = 2;
+        int dot = outputName.lastIndexOf('.');
+        while (outputsInRun.contains(candidate.toAbsolutePath())) {
+            candidate = destDir.resolve(outputName.substring(0, dot) + " (" + counter++ + ")" + outputName.substring(dot));
+        }
+        return candidate;
     }
 
     private boolean isSameFileOrReadOnly(Path source, Path target) throws IOException {
