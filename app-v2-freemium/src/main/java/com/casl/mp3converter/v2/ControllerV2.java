@@ -56,6 +56,8 @@ public class ControllerV2 {
     @FXML
     private javafx.scene.control.Label versionLabel;
     @FXML
+    private javafx.scene.control.Label headerLabel;
+    @FXML
     private Button btnBuyPro;
 
     private final ObjectProperty<Path> sourceDir = new SimpleObjectProperty<>();
@@ -65,6 +67,7 @@ public class ControllerV2 {
     @FXML
     private void initialize() {
         // El tier decide el servicio en CADA conversión (activación puede ser caliente):
+        headerLabel.setText(FeatureGate.headerTitle());
         versionLabel.setText(FeatureGate.footer());
 
         // Conversion is only possible when both folders are selected and nothing is running.
@@ -116,8 +119,9 @@ public class ControllerV2 {
                 });
     }
 
-    /** Refresca pie, botón de compra y título según el tier VIGENTE. */
+    /** Refresca encabezado (portada), pie, botón de compra y título según el tier VIGENTE. */
     private void refreshTierUi() {
+        headerLabel.setText(FeatureGate.headerTitle());
         versionLabel.setText(FeatureGate.footer());
         btnBuyPro.setVisible(!FeatureGate.isPro());
         try {

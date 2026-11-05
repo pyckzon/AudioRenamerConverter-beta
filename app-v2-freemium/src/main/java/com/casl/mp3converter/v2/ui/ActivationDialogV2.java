@@ -79,6 +79,8 @@ public final class ActivationDialogV2 {
                     onActivated.accept(state);
                 }
                 if (state.tier() == LicenseVerifier.Tier.PRO) {
+                    // Agradecimiento EXACTO solicitado: header + content, luego cerrar:
+                    showThankYou(owner);
                     dialog.close();
                 } else {
                     var alert = new Alert(Alert.AlertType.WARNING,
@@ -93,5 +95,17 @@ public final class ActivationDialogV2 {
         });
 
         dialog.showAndWait();
+    }
+
+    /** Textos EXACTOS pedidos por el usuario tras activar correctamente. */
+    private static void showThankYou(Window owner) {
+        var alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Licencia activada");
+        alert.setHeaderText("Muchas gracias por adquirir la version PRO");
+        alert.setContentText("Licencia activada!!! disfruta tu software!!!");
+        if (owner != null) {
+            alert.initOwner(owner);
+        }
+        alert.showAndWait();
     }
 }

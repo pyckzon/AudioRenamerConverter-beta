@@ -43,6 +43,13 @@ public final class FeatureGate {
         proEnabled = enabled;
     }
 
+    /** Título grande de la portada (encabezado) según el tier actual. */
+    public static String headerTitle() {
+        return isPro()
+                ? "Convertidor a MP3 (PRO)"
+                : "Convertidor a MP3 (versión gratuita)";
+    }
+
     /** Footer de la ventana según el tier actual. */
     public static String footer() {
         return isPro()

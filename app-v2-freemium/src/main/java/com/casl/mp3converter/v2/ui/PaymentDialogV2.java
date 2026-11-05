@@ -69,16 +69,51 @@ public final class PaymentDialogV2 {
         cvv.setPromptText("3 dígitos");
 
         // --- formato dinámico mientras se escribe (requisito 2.5) --------------------
-        tarjeta.textProperty().addListener((obs, oldV, newV) ->
-                tariffSafeInsert(tarjeta, DialogsSupport.formatCardVisual(newV)));
-        telefono.textProperty().addListener((obs, oldV, newV) ->
-                tariffSafeInsert(telefono, DialogsSupport.digitsOnly(newV)));
-        cvv.textProperty().addListener((obs, oldV, newV) -> {
-            String digits = DialogsSupport.digitsOnly(newV);
-            tariffSafeInsert(cvv, digits.length() > 3 ? digits.substring(0, 3) : digits);
-        });
-        vencimiento.textProperty().addListener((obs, oldV, newV) ->
-                tariffSafeInsert(vencimiento, DialogsSupport.formatExpiryVisual(newV)));
+        // TextFormatter (NO listener+setText): el cambio se filtra ANTES de aplicarse,
+        // sin re-entradas y sin excepciones al corregir/borrar dentro del texto.
+        tarjeta.setTextFormatter(new javafx.scene.control.TextFormatter<>(
+                (javafx.scene.control.TextFormatter.Change change) -> {
+                    String formatted = DialogsSupport.formatCardVisual(change.getControlNewText());
+                    if (formatted.equals(change.getControlNewText())) {
+                        return change; // ya está con formato
+                    }
+                    change.setText(formatted);
+                    change.setRange(0, change.getControlText().length());
+                    return change;
+                }));
+        telefono.setTextFormatter(new javafx.scene.control.TextFormatter<>(
+                (javafx.scene.control.TextFormatter.Change change) -> {
+                    String digits = DialogsSupport.digitsOnly(change.getControlNewText());
+                    if (digits.equals(change.getControlNewText())) {
+                        return change;
+                    }
+                    change.setText(digits);
+                    change.setRange(0, change.getControlText().length());
+                    return change;
+                }));
+        cvv.setTextFormatter(new javafx.scene.control.TextFormatter<>(
+                (javafx.scene.control.TextFormatter.Change change) -> {
+                    String digits = DialogsSupport.digitsOnly(change.getControlNewText());
+                    if (digits.length() > 3) {
+                        digits = digits.substring(0, 3);
+                    }
+                    if (digits.equals(change.getControlNewText())) {
+                        return change;
+                    }
+                    change.setText(digits);
+                    change.setRange(0, change.getControlText().length());
+                    return change;
+                }));
+        vencimiento.setTextFormatter(new javafx.scene.control.TextFormatter<>(
+                (javafx.scene.control.TextFormatter.Change change) -> {
+                    String formatted = DialogsSupport.formatExpiryVisual(change.getControlNewText());
+                    if (formatted.equals(change.getControlNewText())) {
+                        return change;
+                    }
+                    change.setText(formatted);
+                    change.setRange(0, change.getControlText().length());
+                    return change;
+                }));
 
         // --- errores inline por campo ------------------------------------------------
         Label errNombre = errorLabel();
@@ -158,13 +193,6 @@ public final class PaymentDialogV2 {
         });
 
         dialog.showAndWait();
-    }
-
-    /** Inserta texto formato-dinámico solo si es distinto (evita reentrada del listener). */
-    private static void tariffSafeInsert(TextField field, String formatted) {
-        if (!formatted.equals(field.getText())) {
-            field.setText(formatted);
-        }
     }
 
     /** Errores actuales según el PaymentValidator del core (MISMAS reglas exactas). */
