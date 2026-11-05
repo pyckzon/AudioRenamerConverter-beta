@@ -68,15 +68,22 @@ public final class ActivationDialogV2 {
         VBox.setMargin(codeLabel, new javafx.geometry.Insets(4, 0, 4, 12));
         dialog.getDialogPane().setContent(content);
 
+        // REGRESIÓN del reporte del usuario: copiar NO debe cerrar el diálogo.
+        // En JavaFX CUALQUIER botón del Dialog cierra la ventana al pulsarlo; el
+        // patrón documentado para "persistir" un botón (copiar/validar) es CONSUMIR
+        // su evento Action: la copia va al portapapeles y la pantalla se conserva
+        // hasta pulsar "Activar contrato Pro" (o Cerrar).
+        var copiarButton = dialog.getDialogPane().lookupButton(copiar);
+        copiarButton.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
+            var clipboardContent = new javafx.scene.input.ClipboardContent();
+            clipboardContent.putString(outcome.activationCode());
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(clipboardContent);
+            dialog.setHeaderText(LEYENDA_EXACTA + "\n\n✔ Clave copiada al portapapeles. "
+                    + "Puedes activar ahora mismo con «Activar contrato Pro».");
+            event.consume(); // permanece abierto (2.6: copiar "hasta que le de en activar")
+        });
+
         dialog.setResultConverter(buttonType -> {
-            if (buttonType == copiar) {
-                // copia SIEMPRE accesible para el usuario (2.6):
-                var contentClipboard = new javafx.scene.input.ClipboardContent();
-                contentClipboard.putString(outcome.activationCode());
-                javafx.scene.input.Clipboard.getSystemClipboard().setContent(contentClipboard);
-                dialog.setHeaderText(LEYENDA_EXACTA + "\n\n✔ Clave copiada al portapapeles.");
-                return null;
-            }
             if (buttonType == activar) {
                 try {
                     // 2.6: escribe el mp3converter.lic (formato MPCL, junto al .exe):
