@@ -8,7 +8,8 @@ ffmpeg externo vía ProcessBuilder):
 |--------|----------|---------|--------|
 | `app-v1-desktop` | MP3Converter Desktop | 1.0.0 | Activo (estado histórico, congelado) |
 | `app-v2-freemium` | MP3Converter Freemium — pay-to-pro | 2.0.0 | **Activo (Fases 0–6 completas)** |
-| `app-v3-saas` | MP3Converter SaaS (suscripción) | 3.0.0 | Borrador (`docs/saas/`, Fase 7) |
+| `app-v3-saas` | MP3Converter SaaS (suscripción) | 3.0.0 | Borrador (`docs/saas/ARCHITECTURE.md`, Fase 7) |
+| `backend-saas` | Backend SaaS (Spring Boot 3.x) | 3.0.0 | **Stub vacío** en el build (Fase 7) |
 
 ## Requisitos
 - Para compilar: **Java 21** (JDK: <https://adoptium.net/>).
@@ -111,8 +112,9 @@ mp3Converter/
 ├── core/                  ← lib compartida (conversión + licencias + pago + DB cifrada)
 ├── app-v1-desktop/        ← Proyecto 1: MP3Converter Desktop v1.0.0 (JavaFX + jpackage)
 ├── app-v2-freemium/       ← Proyecto 2: v2.0.0 pay-to-pro (compra→activación→PRO)
-├── app-v3-saas/           ← Proyecto 3: v3.0.0 SaaS (borrador, Fase 7)
-├── docs/                  ← PLAN_MAESTRO.md, criptografia.md, saas/ARCHITECTURE.md
+├── backend-saas/          ← Proyecto 3: stub Spring Boot del SaaS (Fase 7, vacío)
+│                            + docs/saas/ARCHITECTURE.md (modelo de suscripción)
+├── docs/                  ← PLAN_MAESTRO.md, criptografia.md, saas/
 ├── parked/                ← código aparcado (no entra en el build)
 ├── build-exe.bat / build-exe.ps1   ← empaquetado por variante (v1|v2)
 ├── settings.gradle.kts
