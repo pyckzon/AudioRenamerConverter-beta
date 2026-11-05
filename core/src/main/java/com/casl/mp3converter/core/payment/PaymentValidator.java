@@ -34,6 +34,13 @@ public final class PaymentValidator {
     /** mm/AAAA: mes 01..12, año de 4 dígitos. */
     public static final Pattern EXPIRY_PATTERN = Pattern.compile("^(0[1-9]|1[0-2])[/-]\\d{4}$");
 
+    /**
+     * Prefijos de país válidos del dropdown (+52 default México; misma lista que
+     * la UI): se aceptan antepuestos al número local de 10 dígitos.
+     */
+    public static final java.util.List<String> COUNTRY_PREFIXES =
+            java.util.List.of("52", "1", "34", "54", "57", "51", "56");
+
     private PaymentValidator() {
     }
 
@@ -56,13 +63,22 @@ public final class PaymentValidator {
         return Optional.of(v.strip().toLowerCase(Locale.ROOT));
     }
 
-    /** El teléfono SOLO dígitos, exactamente 10 (el prefijo viene del dropdown). */
+    /**
+     * El teléfono SOLO dígitos, exactamente 10 (el prefijo viene del dropdown).
+     * También acepta el formato E.164 que guarda el perfil: prefijo + 10 dígitos
+     * (p. ej. "525512345678" con el dropdown de +52 México).
+     */
     public static Optional<String> validatePhoneDigits(String telefono) {
         String digits = digitsOnly(telefono);
-        if (digits.length() != 10) {
-            return Optional.empty();
+        if (digits.length() == 10) {
+            return Optional.of(digits);
         }
-        return Optional.of(digits);
+        for (String prefix : COUNTRY_PREFIXES) {
+            if (digits.startsWith(prefix) && digits.length() == prefix.length() + 10) {
+                return Optional.of(digits);
+            }
+        }
+        return Optional.empty();
     }
 
     /** Dirección: no vacía, máx 70 y debe contener '#'. */

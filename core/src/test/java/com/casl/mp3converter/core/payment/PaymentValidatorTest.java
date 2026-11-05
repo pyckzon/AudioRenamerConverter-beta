@@ -133,13 +133,25 @@ class PaymentValidatorTest {
     // --- Teléfono --------------------------------------------------------------------
 
     @Test
-    @DisplayName("teléfono: exactamente 10 dígitos (9 y 11 se rechazan)")
+    @DisplayName("teléfono: exactamente 10 dígitos (9 y 11 se rechazan); E.164 con prefijo dropdown ES válido")
     void telefono() {
         assertAll(
                 () -> assertTrue(PaymentValidator.validatePhoneDigits("55 1234 5678").isPresent()),
                 () -> assertTrue(PaymentValidator.validatePhoneDigits("551234567").isEmpty()),
+                () -> assertTrue(PaymentValidator.validatePhoneDigits("55a3456780").isEmpty()),
+                // la nota EXACTA del bug del flujo: el perfil guarda prefijo + 10 dígitos:
+                () -> assertTrue(PaymentValidator.validatePhoneDigits("525512345678").isPresent(),
+                        "prefijo 52 + 10 dígitos (perfil E.164)"),
+                () -> assertTrue(PaymentValidator.validatePhoneDigits("+52 55 1234 5678").isPresent(),
+                        "con '+' del dropdown también pasa (digitsOnly)"),
+                () -> assertTrue(PaymentValidator.validatePhoneDigits("15551234567").isPresent(),
+                        "prefijo 1 (EE.UU.) + 10 dígitos"),
+                // 11 dígitos que NO forman prefijo conocido + 10: rechazado:
                 () -> assertTrue(PaymentValidator.validatePhoneDigits("55123456789").isEmpty()),
-                () -> assertTrue(PaymentValidator.validatePhoneDigits("55a3456780").isEmpty())
+                () -> assertTrue(PaymentValidator.validatePhoneDigits("52551234567").isEmpty(),
+                        "52 + 9 dígitos: faltan del número local"),
+                () -> assertTrue(PaymentValidator.validatePhoneDigits("9995512345678").isEmpty(),
+                        "12 dígitos sin prefijo válido inicial")
         );
     }
 

@@ -72,19 +72,29 @@ public final class ActivationDialogV2 {
                 return null;
             }
             if (buttonType == activar) {
-                // 2.6: escribe el mp3converter.lic (formato MPCL, junto al .exe):
-                LicenseVerifier.LicenseState state = LicenseController.activate(
-                        outcome.activationCode(), FieldCrypto.emailHash(correo));
-                if (onActivated != null) {
-                    onActivated.accept(state);
-                }
-                if (state.tier() == LicenseVerifier.Tier.PRO) {
-                    // Agradecimiento EXACTO solicitado: header + content, luego cerrar:
-                    showThankYou(owner);
-                    dialog.close();
-                } else {
-                    var alert = new Alert(Alert.AlertType.WARNING,
-                            "No se pudo escribir la licencia local: " + state.reason());
+                try {
+                    // 2.6: escribe el mp3converter.lic (formato MPCL, junto al .exe):
+                    LicenseVerifier.LicenseState state = LicenseController.activate(
+                            outcome.activationCode(), FieldCrypto.emailHash(correo));
+                    if (onActivated != null) {
+                        onActivated.accept(state);
+                    }
+                    if (state.tier() == LicenseVerifier.Tier.PRO) {
+                        // Agradecimiento EXACTO solicitado: header + content, luego cerrar:
+                        showThankYou(owner);
+                        dialog.close();
+                    } else {
+                        var alert = new Alert(Alert.AlertType.WARNING,
+                                "No se pudo escribir la licencia local: " + state.reason());
+                        if (owner != null) {
+                            alert.initOwner(owner);
+                        }
+                        alert.showAndWait();
+                    }
+                } catch (Exception e) {
+                    // NADA silencioso: si la activación falla, el usuario lo ve:
+                    var alert = new Alert(Alert.AlertType.ERROR,
+                            "Error al activar la licencia: " + e);
                     if (owner != null) {
                         alert.initOwner(owner);
                     }

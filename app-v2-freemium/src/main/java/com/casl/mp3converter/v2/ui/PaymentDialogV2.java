@@ -139,9 +139,8 @@ public final class PaymentDialogV2 {
         dialog.getDialogPane().setContent(content);
 
         // --- "Pagar" habilitado SOLO cuando el formulario es 100% válido ---------------
-        Runnable refresh = () -> {
-            Map<String, String> errors = currentErrors(nombre, apellido, correo, telefono,
-                    direccion, country, tarjeta, vencimiento, cvv);
+        var pagarBtnHolder = new javafx.scene.control.Button[] {null};
+        Consumer<Map<String, String>> applyErrors = errors -> {
             showInline(errNombre, errors.get(PaymentValidator.FIELD_NOMBRE));
             showInline(errApellido, errors.get(PaymentValidator.FIELD_APELLIDO));
             showInline(errCorreo, errors.get(PaymentValidator.FIELD_CORREO));
@@ -151,11 +150,15 @@ public final class PaymentDialogV2 {
             showInline(errVencimiento, errors.get(PaymentValidator.FIELD_VENCIMIENTO));
             showInline(errCvv, errors.get(PaymentValidator.FIELD_CVV));
             // el botón se resuelve en caliente (lookupButton cuelga hasta que la UI tiene skin):
-            var pagarBtn = (javafx.scene.control.Button) dialog.getDialogPane().lookupButton(pagar);
-            if (pagarBtn != null) {
-                pagarBtn.setDisable(!errors.isEmpty());
+            if (pagarBtnHolder[0] == null) {
+                pagarBtnHolder[0] = (javafx.scene.control.Button) dialog.getDialogPane().lookupButton(pagar);
+            }
+            if (pagarBtnHolder[0] != null) {
+                pagarBtnHolder[0].setDisable(!errors.isEmpty());
             }
         };
+        Runnable refresh = () -> applyErrors.accept(currentErrors(nombre, apellido, correo,
+                telefono, direccion, country, tarjeta, vencimiento, cvv));
         java.util.List.of(nombre, apellido, correo, telefono, direccion, tarjeta, vencimiento, cvv)
                 .forEach(field -> field.textProperty().addListener((obs, oldV, newV) -> refresh.run()));
         country.valueProperty().addListener((obs, oldV, newV) -> refresh.run());
@@ -170,29 +173,49 @@ public final class PaymentDialogV2 {
             if (buttonType != pagar) {
                 return null;
             }
-            String phoneDigits = DialogsSupport.digitsOnly(telefono.getText());
-            CustomerProfile profile = PurchaseContext.profileFrom(nombre.getText(),
-                    apellido.getText(), correo.getText(),
-                    DialogsSupport.countryCodeOf(country), phoneDigits);
-            PaymentRequest request = new PaymentRequest(
-                    (nombre.getText().strip() + " " + apellido.getText().strip()).strip(),
-                    tarjeta.getText(),
-                    PaymentValidator.validateExpiry(vencimiento.getText()).orElse(""),
-                    PaymentValidator.validateCvv(cvv.getText()).orElse(""));
+            try {
+                String phoneDigits = DialogsSupport.digitsOnly(telefono.getText());
+                CustomerProfile profile = PurchaseContext.profileFrom(nombre.getText(),
+                        apellido.getText(), correo.getText(),
+                        DialogsSupport.countryCodeOf(country), phoneDigits);
+                PaymentRequest request = new PaymentRequest(
+                        (nombre.getText().strip() + " " + apellido.getText().strip()).strip(),
+                        tarjeta.getText(),
+                        PaymentValidator.validateExpiry(vencimiento.getText()).orElse(""),
+                        PaymentValidator.validateCvv(cvv.getText()).orElse(""));
 
-            PurchaseOutcome outcome = PurchaseContext.createFlow()
-                    .purchase(profile, direccion.getText(), request);
+                PurchaseOutcome outcome = PurchaseContext.createFlow()
+                        .purchase(profile, direccion.getText(), request);
 
-            if (outcome.status() == PurchaseOutcome.Status.PURCHASED) {
-                dialog.close();
-                onPurchased.accept(outcome);
-            } else if (outcome.status() == PurchaseOutcome.Status.PAYMENT_REJECTED) {
-                errorDialog(owner, "La pasarela rechazó el cobro", outcome.gatewayReference());
+                if (outcome.status() == PurchaseOutcome.Status.PURCHASED) {
+                    return outcome;
+                }
+                if (outcome.status() == PurchaseOutcome.Status.PAYMENT_REJECTED) {
+                    errorDialog(owner, "La pasarela rechazó el cobro", outcome.gatewayReference());
+                    return outcome;
+                }
+                // FORM_INVALID: JAMÁS silencioso — repinta el inline y avisa (no se cobra):
+                applyErrors.accept(outcome.fieldErrors());
+                if (pagarBtnHolder[0] != null) {
+                    pagarBtnHolder[0].setDisable(true);
+                }
+                errorDialog(owner, "Datos por corregir", null,
+                        "El formulario tiene datos que no pasaron la validación final. "
+                                + "Corrige los mensajes en rojo e intenta de nuevo.");
+                return outcome;
+            } catch (Exception e) {
+                // Cualquier fallo del flujo se hace VISIBLE (antes quedaba en silencio):
+                errorDialog(owner, "Error en el proceso de pago", null,
+                        "Error inesperado: " + e);
+                return null;
             }
-            return outcome;
         });
 
-        dialog.showAndWait();
+        var result = dialog.showAndWait().orElse(null);
+        // La UI recibe el outcome FUERA del converter (diálogo ya cerrado, sin anidar):
+        if (result != null && result.succeeded()) {
+            onPurchased.accept(result);
+        }
     }
 
     /** Errores actuales según el PaymentValidator del core (MISMAS reglas exactas). */
@@ -262,11 +285,16 @@ public final class PaymentDialogV2 {
     }
 
     private static void errorDialog(Window owner, String title, String reference) {
+        errorDialog(owner, title, reference,
+                "No se pudo completar el pago (referencia "
+                        + (reference == null ? "-" : reference) + "). Intenta de nuevo.");
+    }
+
+    private static void errorDialog(Window owner, String title, String reference, String message) {
         var alert = new Alert(Alert.AlertType.ERROR);
         alert.setTitle(title);
         alert.setHeaderText(null);
-        alert.setContentText("No se pudo completar el pago (referencia "
-                + (reference == null ? "-" : reference) + "). Intenta de nuevo.");
+        alert.setContentText(message);
         if (owner != null) {
             alert.initOwner(owner);
         }
