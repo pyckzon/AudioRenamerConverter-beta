@@ -49,10 +49,20 @@ public final class ActivationDialogV2 {
 
         ButtonType copiar = new ButtonType("Copiar al portapapeles", ButtonBar.ButtonData.LEFT);
         ButtonType activar = new ButtonType("Activar contrato Pro", ButtonBar.ButtonData.OK_DONE);
-        // Sin botón "Cerrar" (a pedido del usuario): el diálogo solo se cierra al
-        // activar. Nota JavaFX: sin un ButtonType CANCEL_CLOSE, el X de la barra
-        // de título también queda bloqueado (se pretendido: activación guiada).
-        dialog.getDialogPane().getButtonTypes().addAll(activar, copiar);
+        // Sin botón "Cerrar" visible (a pedido del usuario). PERO JavaFX bloquea la
+        // X de la barra de título si NO hay un ButtonType CANCEL_CLOSE — y el usuario
+        // SÍ quiere poder cerrar con la X. Truco documentado incluir ese tipo OCULTO:
+        ButtonType salirOculto = new ButtonType("Salir", ButtonBar.ButtonData.CANCEL_CLOSE);
+        dialog.getDialogPane().getButtonTypes().addAll(activar, copiar, salirOculto);
+        dialog.showingProperty().addListener((obs, wasShowing, isShowing) -> {
+            if (isShowing) {
+                var botonSalir = dialog.getDialogPane().lookupButton(salirOculto);
+                if (botonSalir != null) {
+                    botonSalir.setVisible(false);
+                    botonSalir.setManaged(false); // no ocupa espacio en la barra de botones
+                }
+            }
+        });
 
         VBox content = new VBox(8);
         Label instruccion = new Label("Para pasar a PRO AHORA MISMO, pulsa el botón "
@@ -98,6 +108,13 @@ public final class ActivationDialogV2 {
             event.consume(); // permanece abierto (2.6: copiar "hasta que le de en activar")
         });
 
+        // Reacción FUERA del event loop del botón (ver DialogCloseProbe/regresión):
+        // los showAndWait anidados dentro del resultConverter CUELGAN el event loop
+        // y el diálogo no cierra. La activación SÓLO captura el resultado; las
+        // alertas se disparan en setOnHiding (diálogo ya cerrado).
+        var resultadoLicencia = new java.util.concurrent.atomic.AtomicReference<LicenseVerifier.LicenseState>(null);
+        var errorActivacion = new java.util.concurrent.atomic.AtomicReference<Throwable>(null);
+
         dialog.setResultConverter(buttonType -> {
             if (buttonType == activar) {
                 try {
@@ -107,29 +124,36 @@ public final class ActivationDialogV2 {
                     if (onActivated != null) {
                         onActivated.accept(state);
                     }
-                    if (state.tier() == LicenseVerifier.Tier.PRO) {
-                        // Agradecimiento EXACTO solicitado: header + content, luego cerrar:
-                        showThankYou(owner);
-                        dialog.close();
-                    } else {
-                        var alert = new Alert(Alert.AlertType.WARNING,
-                                "No se pudo escribir la licencia local: " + state.reason());
-                        if (owner != null) {
-                            alert.initOwner(owner);
-                        }
-                        alert.showAndWait();
-                    }
+                    resultadoLicencia.set(state);
                 } catch (Exception e) {
-                    // NADA silencioso: si la activación falla, el usuario lo ve:
-                    var alert = new Alert(Alert.AlertType.ERROR,
-                            "Error al activar la licencia: " + e);
-                    if (owner != null) {
-                        alert.initOwner(owner);
-                    }
-                    alert.showAndWait();
+                    // NADA silencioso: el despliegue de la alerta queda para onHiding
+                    errorActivacion.set(e);
                 }
             }
             return null;
+        });
+
+        // El botón OK_DONE cierra el dialog automáticamente tras el converter
+        // (probado con la sonda). Incluso en setOnHiding seguimos dentro del
+        // procesamiento del cierre: se difiere UN PULSO con runLater para que el
+        // modal del agradecimiento/error abra 100% fuera del ciclo de cierre.
+        dialog.setOnHiding(event -> {
+            Throwable ex = errorActivacion.get();
+            if (ex != null) {
+                javafx.application.Platform.runLater(() -> errorAlert(owner, ex));
+                return;
+            }
+            LicenseVerifier.LicenseState state = resultadoLicencia.get();
+            if (state == null) {
+                return; // se cerró sin activar (X): quedar en el tier vigente
+            }
+            if (state.tier() == LicenseVerifier.Tier.PRO) {
+                // Agradecimiento EXACTO solicitado (header + content):
+                javafx.application.Platform.runLater(() -> showThankYou(owner));
+            } else {
+                javafx.application.Platform.runLater(
+                        () -> warnLicencia(owner, state.reason()));
+            }
         });
 
         dialog.showAndWait();
@@ -141,6 +165,26 @@ public final class ActivationDialogV2 {
         alert.setTitle("Licencia activada");
         alert.setHeaderText("Muchas gracias por adquirir la version PRO");
         alert.setContentText("Licencia activada!!! disfruta tu software!!!");
+        if (owner != null) {
+            alert.initOwner(owner);
+        }
+        alert.showAndWait();
+    }
+
+    /** Fallo controlado (sin crash): lic no escrita — razón auditable en pantalla. */
+    private static void warnLicencia(Window owner, String reason) {
+        var alert = new Alert(Alert.AlertType.WARNING,
+                "No se pudo escribir la licencia local: " + reason);
+        if (owner != null) {
+            alert.initOwner(owner);
+        }
+        alert.showAndWait();
+    }
+
+    /** Excepción al activar — visible SIEMPRE (ex .exe sin consola). */
+    private static void errorAlert(Window owner, Throwable ex) {
+        var alert = new Alert(Alert.AlertType.ERROR,
+                "Error al activar la licencia: " + ex);
         if (owner != null) {
             alert.initOwner(owner);
         }
