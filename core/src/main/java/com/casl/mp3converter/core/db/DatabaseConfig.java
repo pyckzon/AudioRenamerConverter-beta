@@ -71,6 +71,11 @@ public final class DatabaseConfig {
         return DriverManager.getConnection(url, user, password);
     }
 
+    /** proveedor listo para repositorios, sin exponer tipos SQL fuera del core. */
+    public ConnectionProvider connectionProvider() {
+        return this::connect;
+    }
+
     /** Máscara segura del endpoint (host only) para logs/diálogos. */
     public String maskedDescription() {
         try {

@@ -60,7 +60,8 @@ public final class FeatureGate {
                 + "  ·  Calidad MP3 de hasta 320 kbps (el free graba con 92 kbps CBR)\n"
                 + "  ·  Sin el sello audible \"mp3Converter\" al inicio y al final\n"
                 + "  ·  Conversión de archivos .opus\n\n"
-                + "El formulario de pago y la activación se implementarán en las fases 4 y 5 del plan.\n";
+                + "El pago se procesa con la pasarela de demo (mock): nunca se guardan\n"
+                + "datos de tarjeta. Al aprobar recibes una clave de activación.\n";
     }
 
     /**

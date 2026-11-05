@@ -5,4 +5,5 @@ module com.casl.mp3converter.core {
     exports com.casl.mp3converter.core;
     exports com.casl.mp3converter.core.license;
     exports com.casl.mp3converter.core.db;
+    exports com.casl.mp3converter.core.payment;
 }

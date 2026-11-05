@@ -38,6 +38,9 @@
     <Button fx:id="btnConvert" text="Convertir a MP3" onAction="#onStartConversion"
             defaultButton="true" maxWidth="Infinity" style="-fx-font-size: 14px;"/>
 
+    <Button fx:id="btnBuyPro" text="Comprar versión Pro" onAction="#onBuyPro"
+            maxWidth="Infinity" style="-fx-font-size: 12px; -fx-font-color: darkorange;"/>
+
     <ProgressBar fx:id="progressBar" maxWidth="Infinity" progress="0.0"/>
     <Label fx:id="statusLabel" text="Listo." style="-fx-text-fill: gray;"/>
 

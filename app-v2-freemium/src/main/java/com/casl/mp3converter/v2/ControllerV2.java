@@ -1,6 +1,7 @@
 package com.casl.mp3converter.v2;
 
 import com.casl.mp3converter.core.Mp3ConversionService;
+import com.casl.mp3converter.core.license.LicenseVerifier;
 import com.casl.mp3converter.v2.freemium.FeatureGate;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.ObjectProperty;
@@ -22,20 +23,18 @@ import javafx.stage.DirectoryChooser;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
-import javafx.scene.control.ButtonType;
+import javafx.stage.Window;
 
 /**
- * Controller of MP3Converter Free v2.0.0.
+ * Controller of MP3Converter v2.0.0.
  * ALL tier rules live in {@link FeatureGate}: the controller only asks and reacts.
  * <p>
  * Free tier behaves per requirements: 92 kbps (2.1), audible "mp3Converter" watermark
  * at start and end (2.2), .opus listed but blocked with a "requires Pro" message and
- * a "Buy Pro" CTA dialog (2.3). The conversion summary shows skipped files in a
- * scrollable text block with an "Aceptar" button.
+ * a "Buy Pro" CTA dialog (2.3). Fase 5: compra real con formulario (2.5), pasarela
+ * mock (2.5.1), persistencia cifrada (2.5.2) y activación en caliente (2.6).
  */
 public class ControllerV2 {
     private static final Logger LOGGER = Logger.getLogger(ControllerV2.class.getName());
@@ -56,27 +55,85 @@ public class ControllerV2 {
     private Label statusLabel;
     @FXML
     private javafx.scene.control.Label versionLabel;
+    @FXML
+    private Button btnBuyPro;
 
     private final ObjectProperty<Path> sourceDir = new SimpleObjectProperty<>();
     private final ObjectProperty<Path> destDir = new SimpleObjectProperty<>();
     private final BooleanProperty conversionRunning = new SimpleBooleanProperty(false);
 
-    private Mp3ConversionService conversionService;
-
     @FXML
     private void initialize() {
-        // The tier decides the service (quality/watermark/blocked extensions).
-        conversionService = FeatureGate.createService();
+        // El tier decide el servicio en CADA conversión (activación puede ser caliente):
         versionLabel.setText(FeatureGate.footer());
 
         // Conversion is only possible when both folders are selected and nothing is running.
         btnConvert.disableProperty().bind(
                 conversionRunning.or(sourceDir.isNull()).or(destDir.isNull()));
 
+        // El botón de compra solo se ve en FREE (tras activar Pro desaparece):
+        btnBuyPro.managedProperty().bind(btnBuyPro.visibleProperty());
+        btnBuyPro.setVisible(!FeatureGate.isPro());
+
         // The progress bar is only relevant while converting.
         progressBar.visibleProperty().bind(conversionRunning);
         progressBar.managedProperty().bind(conversionRunning);
         progressBar.setProgress(0.0);
+    }
+
+    /** Fase 5 (2.5/2.6): abre el formulario de pago desde el botón principal. */
+    @FXML
+    private void onBuyPro() {
+        openBuyProDialog();
+    }
+
+    /** Abre el flujo de compra (diálogo 2.5) y encadena el diálogo de activación (2.6). */
+    private void openBuyProDialog() {
+        statusLabel.setText("Abriendo el formulario de pago...");
+        com.casl.mp3converter.v2.ui.PaymentDialogV2.show(ownerWindow(), outcome -> {
+            if (outcome != null && outcome.succeeded()) {
+                showActivationDialog(outcome);
+            }
+        });
+        statusLabel.setText("Listo.");
+    }
+
+    /** 2.6: cuadro de activación con leyenda exacta + copiar + "activar contrato Pro". */
+    private void showActivationDialog(com.casl.mp3converter.core.payment.PurchaseOutcome outcome) {
+        boolean persistido = outcome.codePersisted();
+        com.casl.mp3converter.v2.ui.ActivationDialogV2.show(
+                ownerWindow(),
+                outcome,
+                outcome.profile().correo(),
+                outcome.profile().apellido(),
+                state -> {
+                    // Activación EN CALIENTE (requisito 2.6): sin reiniciar.
+                    FeatureGate.setProEnabled(state.tier() == LicenseVerifier.Tier.PRO);
+                    refreshTierUi();
+                    if (!persistido) {
+                        statusLabel.setText("Pro activado (código efímero: modo demo sin BD).");
+                    }
+                });
+    }
+
+    /** Refresca pie, botón de compra y título según el tier VIGENTE. */
+    private void refreshTierUi() {
+        versionLabel.setText(FeatureGate.footer());
+        btnBuyPro.setVisible(!FeatureGate.isPro());
+        try {
+            var stage = (javafx.stage.Stage) ownerWindow();
+            if (stage != null) {
+                stage.setTitle(FeatureGate.isPro()
+                        ? "Convertidor a MP3 (PRO)"
+                        : "Convertidor a MP3 (versión gratuita)");
+            }
+        } catch (ClassCastException fallback) {
+            LOGGER.warning("La ventana activa no es un Stage; título no actualizado.");
+        }
+    }
+
+    private Window ownerWindow() {
+        return sourcePathLabel.getScene() == null ? null : sourcePathLabel.getScene().getWindow();
     }
 
     @FXML
@@ -136,7 +193,9 @@ public class ControllerV2 {
         Task<Mp3ConversionService.ConversionSummary> task = new Task<>() {
             @Override
             protected Mp3ConversionService.ConversionSummary call() throws Exception {
-                return conversionService.convert(source, dest, (converted, total, fileName) -> {
+                // El tier VIGENTE manda en cada conversión (activación caliente, requisito 2.6):
+                var service = FeatureGate.createService();
+                return service.convert(source, dest, (converted, total, fileName) -> {
                     updateProgress(converted, total);
                     updateMessage(String.format("Convirtiendo %d de %d: %s", converted, total, fileName));
                 });
@@ -208,7 +267,7 @@ public class ControllerV2 {
         }
     }
 
-    /** 2.3 CTA: details of the blocked files + "Comprar versión Pro" button (stub of fase 5). */
+    /** 2.3 CTA: details of the blocked files + "Comprar versión Pro" → flujo real (fase 5). */
     private void showBuyProDialog(String title, String details) {
         try {
             var dialog = new Dialog<ButtonType>();
@@ -232,10 +291,8 @@ public class ControllerV2 {
 
             var pressed = dialog.showAndWait().orElse(aceptar);
             if (pressed == comprar) {
-                statusLabel.setText("Compra de la versión Pro: disponible en la fase 5 del plan.");
-                showInformation(FeatureGate.buyTitle(),
-                        FeatureGate.buyNotice()
-                        + "\nEl flujo de pago y la activación se integrarán con la Fase 5.");
+                // Fase 5: el CTA ya abre el flujo real de compra (2.5) + activación (2.6):
+                openBuyProDialog();
             }
         } catch (Exception e) { // Never let a dialog failure crash the application.
             LOGGER.log(Level.SEVERE, "No se pudo mostrar el CTA de compra", e);
