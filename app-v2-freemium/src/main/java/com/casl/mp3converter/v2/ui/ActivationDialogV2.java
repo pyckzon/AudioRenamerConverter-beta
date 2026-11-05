@@ -60,27 +60,40 @@ public final class ActivationDialogV2 {
                 + "mp3converter.lic y la aplicación cambia a PRO sin reiniciar.");
         instruccion.setWrapText(true);
         instruccion.setStyle("-fx-font-weight: bold;");
+        // Slot FIJO para el estado de la copia (REGRESIÓN: si el texto va en el
+        // headerText, el encabezado crece al confirmar y el contenido se desplaza
+        // ENCIMA de los botones). Con label fijo dentro del contenido no hay
+        // ningún corrimiento de layout al copiar.
+        Label estadoCopiado = new Label("Pulsa «Copiar al portapapeles» para guardar "
+                + "la clave en el portapapeles del sistema.");
+        estadoCopiado.setWrapText(true);
+        estadoCopiado.setStyle("-fx-text-fill: #2e7d32;");
         content.getChildren().addAll(
                 new Label("Clave de activación:"),
                 codeLabel,
                 instruccion,
+                estadoCopiado,
                 new Label("Sin base de datos, este código NO se recupera después: "
                         + "guárdalo ahora."));
 
         VBox.setMargin(codeLabel, new javafx.geometry.Insets(4, 0, 4, 12));
+        // Espacio RESERVADO (pedido del usuario): altura mínima para toda la forma,
+        // así nunca se enciman las letras con los botones.
+        content.setMinHeight(280);
         dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().setMinHeight(360);
 
         // REGRESIÓN del reporte del usuario: copiar NO debe cerrar el diálogo.
         // En JavaFX CUALQUIER botón del Dialog cierra la ventana al pulsarlo; el
         // patrón documentado para "persistir" un botón (copiar/validar) es CONSUMIR
         // su evento Action: la copia va al portapapeles y la pantalla se conserva
-        // hasta pulsar "Activar contrato Pro" (o Cerrar).
+        // hasta pulsar "Activar contrato Pro".
         var copiarButton = dialog.getDialogPane().lookupButton(copiar);
         copiarButton.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
             var clipboardContent = new javafx.scene.input.ClipboardContent();
             clipboardContent.putString(outcome.activationCode());
             javafx.scene.input.Clipboard.getSystemClipboard().setContent(clipboardContent);
-            dialog.setHeaderText(LEYENDA_EXACTA + "\n\n✔ Clave copiada al portapapeles. "
+            estadoCopiado.setText("✔ Clave copiada al portapapeles. "
                     + "Puedes activar ahora mismo con «Activar contrato Pro».");
             event.consume(); // permanece abierto (2.6: copiar "hasta que le de en activar")
         });
