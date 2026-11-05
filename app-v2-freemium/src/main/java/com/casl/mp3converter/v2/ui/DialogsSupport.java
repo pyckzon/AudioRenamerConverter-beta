@@ -56,6 +56,49 @@ final class DialogsSupport {
         return text == null ? "" : text.replaceAll("\\D", "");
     }
 
+    /**
+     * Formateador de dígitos con CURSOR DETERMINISTA (regresión del bug del
+     * vencimiento): cuando el formateador reescribe el texto completo (p. ej.
+     * inserta la "/" de mm/AAAA o el espacio de la tarjeta), el caret de JavaFX
+     * queda MAPEADO a mitad del texto y los dígitos siguientes se insertan en
+     * medio, desordenando la secuencia ("08/0322"). Aquí fijamos el caret
+     * EXPLÍCITAMENTE al índice del texto formateado donde sigue la misma
+     * cantidad de dígitos que el usuario llevaba hasta su cursor.
+     */
+    static javafx.scene.control.TextFormatter<String> digitFormatter(
+            java.util.function.Function<String, String> formatter) {
+        return new javafx.scene.control.TextFormatter<>(change -> {
+            String newText = change.getControlNewText();
+            String formatted = formatter.apply(newText);
+            if (formatted.equals(newText)) {
+                return change;
+            }
+            // ¿cuántos dígitos quedan ANTES del caret ya mapeado al texto nuevo?
+            // (getCaretPosition: el caret recalculado por JavaFX, en coordenadas del
+            // texto nuevo; controlCaretPosition está en el texto VIEJO y se queda
+            // un carácter atrás en el tecleo seguido)
+            int mappedCaret = Math.min(change.getCaretPosition(), newText.length());
+            int digitsBefore = digitsOnly(newText.substring(0, mappedCaret)).length();
+            change.setRange(0, change.getControlText().length());
+            change.setText(formatted);
+            int target = caretAfterDigits(formatted, digitsBefore);
+            change.setCaretPosition(target);
+            change.setAnchor(target);
+            return change;
+        });
+    }
+
+    /** Índice del texto formateado donde terminan los primeros {@code n} dígitos. */
+    static int caretAfterDigits(String formatted, int n) {
+        int seen = 0;
+        for (int i = 0; i < formatted.length(); i++) {
+            if (Character.isDigit(formatted.charAt(i)) && ++seen > n) {
+                return i;
+            }
+        }
+        return formatted.length();
+    }
+
     /** Prefijos de país del dropdown (requisito 2.5: default +52 México). */
     static ComboBox<String> buildCountryCombo() {
         var combo = new ComboBox<String>();

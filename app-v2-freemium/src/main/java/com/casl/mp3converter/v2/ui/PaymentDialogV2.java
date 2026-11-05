@@ -69,51 +69,16 @@ public final class PaymentDialogV2 {
         cvv.setPromptText("3 dígitos");
 
         // --- formato dinámico mientras se escribe (requisito 2.5) --------------------
-        // TextFormatter (NO listener+setText): el cambio se filtra ANTES de aplicarse,
-        // sin re-entradas y sin excepciones al corregir/borrar dentro del texto.
-        tarjeta.setTextFormatter(new javafx.scene.control.TextFormatter<>(
-                (javafx.scene.control.TextFormatter.Change change) -> {
-                    String formatted = DialogsSupport.formatCardVisual(change.getControlNewText());
-                    if (formatted.equals(change.getControlNewText())) {
-                        return change; // ya está con formato
-                    }
-                    change.setText(formatted);
-                    change.setRange(0, change.getControlText().length());
-                    return change;
-                }));
-        telefono.setTextFormatter(new javafx.scene.control.TextFormatter<>(
-                (javafx.scene.control.TextFormatter.Change change) -> {
-                    String digits = DialogsSupport.digitsOnly(change.getControlNewText());
-                    if (digits.equals(change.getControlNewText())) {
-                        return change;
-                    }
-                    change.setText(digits);
-                    change.setRange(0, change.getControlText().length());
-                    return change;
-                }));
-        cvv.setTextFormatter(new javafx.scene.control.TextFormatter<>(
-                (javafx.scene.control.TextFormatter.Change change) -> {
-                    String digits = DialogsSupport.digitsOnly(change.getControlNewText());
-                    if (digits.length() > 3) {
-                        digits = digits.substring(0, 3);
-                    }
-                    if (digits.equals(change.getControlNewText())) {
-                        return change;
-                    }
-                    change.setText(digits);
-                    change.setRange(0, change.getControlText().length());
-                    return change;
-                }));
-        vencimiento.setTextFormatter(new javafx.scene.control.TextFormatter<>(
-                (javafx.scene.control.TextFormatter.Change change) -> {
-                    String formatted = DialogsSupport.formatExpiryVisual(change.getControlNewText());
-                    if (formatted.equals(change.getControlNewText())) {
-                        return change;
-                    }
-                    change.setText(formatted);
-                    change.setRange(0, change.getControlText().length());
-                    return change;
-                }));
+        // TextFormatter con caret DETERMINISTA (DialogsSupport.digitFormatter):
+        // la "/" y los espacios visuales se insertan sin mover el cursor a mitad
+        // del texto (regresión del "08/0322").
+        tarjeta.setTextFormatter(DialogsSupport.digitFormatter(DialogsSupport::formatCardVisual));
+        telefono.setTextFormatter(DialogsSupport.digitFormatter(DialogsSupport::digitsOnly));
+        cvv.setTextFormatter(DialogsSupport.digitFormatter(text -> {
+            String digits = DialogsSupport.digitsOnly(text);
+            return digits.length() > 3 ? digits.substring(0, 3) : digits;
+        }));
+        vencimiento.setTextFormatter(DialogsSupport.digitFormatter(DialogsSupport::formatExpiryVisual));
 
         // --- errores inline por campo ------------------------------------------------
         Label errNombre = errorLabel();
