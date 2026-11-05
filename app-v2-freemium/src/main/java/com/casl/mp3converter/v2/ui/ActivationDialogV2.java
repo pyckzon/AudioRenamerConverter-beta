@@ -49,8 +49,10 @@ public final class ActivationDialogV2 {
 
         ButtonType copiar = new ButtonType("Copiar al portapapeles", ButtonBar.ButtonData.LEFT);
         ButtonType activar = new ButtonType("Activar contrato Pro", ButtonBar.ButtonData.OK_DONE);
-        ButtonType cerrar = new ButtonType("Cerrar", ButtonBar.ButtonData.CANCEL_CLOSE);
-        dialog.getDialogPane().getButtonTypes().addAll(activar, copiar, cerrar);
+        // Sin botón "Cerrar" (a pedido del usuario): el diálogo solo se cierra al
+        // activar. Nota JavaFX: sin un ButtonType CANCEL_CLOSE, el X de la barra
+        // de título también queda bloqueado (se pretendido: activación guiada).
+        dialog.getDialogPane().getButtonTypes().addAll(activar, copiar);
 
         VBox content = new VBox(8);
         Label instruccion = new Label("Para pasar a PRO AHORA MISMO, pulsa el botón "
