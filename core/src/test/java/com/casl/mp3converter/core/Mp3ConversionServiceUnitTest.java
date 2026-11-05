@@ -35,7 +35,7 @@ class Mp3ConversionServiceUnitTest {
                                                           String stubbedConversionResult) {
         return new Mp3ConversionService() {
             @Override
-            boolean isFfmpegAvailable() {
+            public boolean isFfmpegAvailable() {
                 return available;
             }
 
@@ -207,7 +207,7 @@ class Mp3ConversionServiceUnitTest {
         // stub que imita el comportamiento real: crea el .mp3 destino con su nombre
         var stub = new Mp3ConversionService() {
             @Override
-            boolean isFfmpegAvailable() { return true; }
+            public boolean isFfmpegAvailable() { return true; }
 
             @Override
             String convertSingleFile(Path audioFile, Path dir, Set<Path> outputsInRun) throws IOException {

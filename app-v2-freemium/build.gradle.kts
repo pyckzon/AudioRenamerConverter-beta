@@ -51,9 +51,32 @@ tasks.withType<Test> {
     testLogging.showStandardStreams = true
 }
 
+// Unit tests: rápidos y deterministas (probadas de UI incluidas).
+tasks.test {
+    useJUnitPlatform {
+        excludeTags("integration")
+    }
+}
+
 // Blackbox tests on classpath (same convention as core, no module-path touch).
 tasks.compileTestJava {
     modularity.inferModulePath.set(false)
+}
+
+// E2E del flujo compra->activación->PRO con conversión REAL (ffmpeg) de la Fase 6.
+// check también lo ejecuta para que el build falle si el flujo se rompe.
+val integrationTest = tasks.register<Test>("integrationTest") {
+    group = "verification"
+    description = "Flujo E2E v2 (fase 6): compra -> activación -> conversiones por tier."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags("integration")
+    }
+}
+
+tasks.check {
+    dependsOn(integrationTest)
 }
 
 tasks.withType<JavaCompile> {

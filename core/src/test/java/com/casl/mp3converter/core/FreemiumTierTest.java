@@ -72,7 +72,7 @@ class FreemiumTierTest {
                                                        Set<String> blocked, AtomicInteger ffmpegCalls) {
         return new Mp3ConversionService(policy, watermark, blocked) {
             @Override
-            boolean isFfmpegAvailable() {
+            public boolean isFfmpegAvailable() {
                 return true;
             }
 

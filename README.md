@@ -1,25 +1,81 @@
 # mp3Converter — Portfolio multi-proyecto
 
-Un solo repositorio con 3 proyectos Java de portfolio. Todos comparten la lógica de
-conversión (módulo `core`, ffmpeg externo vía ProcessBuilder):
+Un solo repositorio Gradle con 3 proyectos Java del mismo negocio de audio, cada uno
+en su fase de evolución. Todos comparten la lógica de conversión (módulo `core`,
+ffmpeg externo vía ProcessBuilder):
 
 | Módulo | Proyecto | Versión | Estado |
 |--------|----------|---------|--------|
-| `app-v1-desktop` | MP3Converter Desktop | 1.0.0 | Activo (estado histórico, sin cambios) |
-| `app-v2-freemium` | MP3Converter Freemium (92 kbps, watermark, compra mock + activación Pro) | 2.0.0 | En desarrollo |
-| `app-v3-saas` | MP3Converter SaaS (suscripción mensual/anual) | 3.0.0 | Borrador del plan |
+| `app-v1-desktop` | MP3Converter Desktop | 1.0.0 | Activo (estado histórico, congelado) |
+| `app-v2-freemium` | MP3Converter Freemium — pay-to-pro | 2.0.0 | **Activo (Fases 0–6 completas)** |
+| `app-v3-saas` | MP3Converter SaaS (suscripción) | 3.0.0 | Borrador (`docs/saas/`, Fase 7) |
 
 ## Requisitos
-- **Java 21** (JDK: <https://adoptium.net/>) para compilar y ejecutar.
-- **ffmpeg** en el PATH del sistema (`winget install ffmpeg`) para convertir el audio.
+- Para compilar: **Java 21** (JDK: <https://adoptium.net/>).
+- Para convertir: **ffmpeg** en el PATH (`winget install ffmpeg`).
+- Los ejecutables `.exe` (jpackage) son autocontenidos: **no requieren Java instalado**.
 
-## Base de datos (v2, fase 4): Supabase
+## Proyecto 1 — MP3Converter Desktop v1.0.0
+Conversor WAV/AIFF/FLAC/M4A/OGG/WMA a MP3 con VBR de alta calidad (`-q:a 2`),
+sin marca de agua ni restricciones. Es el estado histórico del producto: se
+construye y ejecuta, pero no recibe cambios.
 
-La persistencia segura (usuarios y códigos de activación) usa **Supabase (Postgres)**.
-Son opcionales: sin credenciales la app funciona en modo FREE y las pruebas contra la
-base real se omiten automáticamente.
+```bash
+./gradlew :app-v1-desktop:jpackageImage
+# exe: app-v1-desktop\build\jpackage\mp3Converter\mp3Converter.exe
+```
 
-Variables de entorno (nunca hardcoded; ver `docs/criptografia.md`):
+## Proyecto 2 — MP3Converter Freemium v2.0.0 (pay-to-pro)
+El modelo freemium demostrado end-to-end:
+
+**Free (sin licencia):**
+- Calidad fija **92 kbps CBR** (`-b:a 92k`, nunca VBR).
+- Marca de agua audible **"mp3Converter"** al inicio y al final de cada MP3.
+- Los `.opus` se listan pero requieren la versión Pro (ffmpeg nunca se invoca
+  para ellos) con CTA "Comprar versión Pro".
+
+**Pro (con licencia):**
+- VBR completo (`-q:a 2`), sin watermark, `.opus` habilitado.
+
+### Guía de activación
+1. "Comprar versión Pro" → formulario con validaciones exactas (tarjeta 16
+   dígitos + Luhn, CVV 3, `mm/AAAA` no vencido, nombres solo letras, dirección ≤70
+   con `#`, teléfono 10 dígitos + dropdown de país, correo).
+2. Pasarela **mock** (aprueba siempre, latencia simulada; los datos de tarjeta
+   viven solo en memoria y en logs solo `**** 1234`).
+3. Al aprobar se genera la **clave de activación** (persistida cifrada en
+   Supabase si hay credenciales; efímera en modo demo sin BD).
+4. "Copiar al portapapeles" (el cuadro permanece abierto) →
+   **"Activar contrato Pro"** → se escribe `mp3converter.lic` (binario MPCL con
+   AES-256-GCM + HMAC-SHA256) junto al `.exe`, aparece el mensaje de
+   agradecimiento y la app pasa a **PRO sin reiniciar**.
+5. Al reiniciar, la app lee la `.lic` de su carpeta y abre en PRO.
+6. Borrar la `.lic` devuelve la app a FREE.
+
+La licencia es **por carpeta** (multi-instancia): dos carpetas de exe pueden
+tener estados distintos sin interferir entre sí.
+
+### Arquitectura v2
+```
+core (Java, sin JavaFX)
+├── conversion:  Mp3ConversionService + QualityPolicy (92k CBR / VBR) + watermark
+├── license:     LicenseCodec (MPCL binario), LicenseVerifier, LicenseController,
+│                FieldCrypto (PBKDF2 sal=correo, pepper=apellido), ActivationCodeGenerator
+├── payment:     PaymentValidator (reglas exactas 2.5), PaymentGateway + MockPaymentGateway,
+│                PaymentFlow -> PurchaseOutcome (perfil en memoria, jamás persistido)
+└── db:          DatabaseConfig (env SUPABASE_DB_*), UserRepository, ActivationRepository
+                  (hashes HMAC + AES; jamás plaintext en BD)
+
+app-v2-freemium (JavaFX)
+└── FeatureGate (tier desde .lic, hot flip), ControllerV2 (fluye compra→activación),
+    PaymentDialogV2 / ActivationDialogV2 (TextFormatters sin carets rotos)
+```
+
+## Base de datos: Supabase (opcional)
+La persistencia (usuarios + códigos de activación cifrados) usa **Supabase
+Postgres**. Sin credenciales la app funciona y guarda el código con marca
+"efímero" (no se recupera después). Las pruebas contra la base real se omiten
+automáticamente si no hay variables:
 
 ```powershell
 $env:SUPABASE_DB_URL  = "jdbc:postgresql://db.<proyecto>.supabase.co:5432/postgres?sslmode=require"
@@ -27,39 +83,47 @@ $env:SUPABASE_DB_USER = "postgres"
 $env:SUPABASE_DB_PWD  = "<password del proyecto>"
 ```
 
-CLI adicional para pruebas: `system properties` `mp3converter.db.url/user/pwd`.
+Variante por system properties para pruebas: `mp3converter.db.url/user/pwd`.
+Detalle criptográfico completo: `docs/criptografia.md`.
 
 ## Comandos
 ```bash
 ./gradlew test              # unitarios de todos los módulos (rápidos)
-./gradlew check             # unitarios + integración (ffmpeg real) + db-integration (skip sin SUPABASE_DB_*)
+./gradlew check             # unitarios + integración (ffmpeg real) + db-integration
 ./gradlew dbIntegrationTest # SOLO pruebas contra Supabase real (tag db-integration)
 
-./gradlew :app-v1-desktop:jpackageImage   # genera el .exe de la v1
-./gradlew :app-v2-freemium:jpackageImage  # genera el .exe de la v2 (freemium)
-./build-exe.bat        # equivalente, vía script (variante por defecto: v1)
-./build-exe.ps1 -App v2    # otras variantes cuando existan (v2 → app-v2-freemium)
+./gradlew :app-v2-freemium:jpackageImage   # .exe v2 (autocontenido, sin Java)
+./build-exe.bat                            # variante por defecto (v1)
+./build-exe.ps1 -App v2                    # empaquetado por variante (v1|v2)
 ```
 
-El ejecutable queda en `app-v1-desktop\build\jpackage\mp3Converter\mp3Converter.exe`
-(autocontenido: no requiere Java instalado).
+Ejecutables:
+- v1: `app-v1-desktop\build\jpackage\mp3Converter\mp3Converter.exe`
+- v2: `app-v2-freemium\build\jpackage\mp3ConverterFree\mp3ConverterFree.exe`
+  (la `mp3converter.lic` vive junto a este exe; borrarla = volver a FREE)
+
+Nota: `jpackageImage` borra la carpeta del exe — si la `.lic` existía, hay que
+volver a activar (o no incluirla para probar el flujo de compra desde cero).
 
 ## Estructura del repositorio
 ```
 mp3Converter/
-├── core/                  ← lib compartida (conversión + licencias + DB cifrada)
+├── core/                  ← lib compartida (conversión + licencias + pago + DB cifrada)
 ├── app-v1-desktop/        ← Proyecto 1: MP3Converter Desktop v1.0.0 (JavaFX + jpackage)
-├── app-v2-freemium/       ← Proyecto 2: v2.0.0 pay-to-pro
-├── app-v3-saas/           ← Proyecto 3: v3.0.0 SaaS (futuro)
-├── docs/                  ← PLAN_MAESTRO.md, criptografia.md
+├── app-v2-freemium/       ← Proyecto 2: v2.0.0 pay-to-pro (compra→activación→PRO)
+├── app-v3-saas/           ← Proyecto 3: v3.0.0 SaaS (borrador, Fase 7)
+├── docs/                  ← PLAN_MAESTRO.md, criptografia.md, saas/ARCHITECTURE.md
 ├── parked/                ← código aparcado (no entra en el build)
-├── build-exe.bat / build-exe.ps1   ← empaquetado por variante
+├── build-exe.bat / build-exe.ps1   ← empaquetado por variante (v1|v2)
 ├── settings.gradle.kts
 └── build.gradle.kts       ← raíz (multi-módulo Gradle)
 ```
 
 ## Documentación adicional
-- Plan de acción completo (fases, características, pruebas y riesgos): `docs/PLAN_MAESTRO.md`.
+- Plan de acción completo (fases, características, pruebas y riesgos):
+  `docs/PLAN_MAESTRO.md`.
+- Diseño criptográfico de la Fase 4/5 (por qué sal=correo y pepper=apellido,
+  formato MPCL, hashes en BD): `docs/criptografia.md`.
 
 ## Licencia
 MIT (ver `LICENSE`).

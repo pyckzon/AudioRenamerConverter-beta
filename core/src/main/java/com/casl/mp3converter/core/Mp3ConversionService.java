@@ -476,7 +476,8 @@ public class Mp3ConversionService {
                 + "  3. Reinicia la aplicación e inténtalo de nuevo.");
     }
 
-    boolean isFfmpegAvailable() {
+    /** utilidad pública (app2): ffmpeg presente en el PATH del sistema. */
+    public boolean isFfmpegAvailable() {
         try {
             Process probe = new ProcessBuilder("ffmpeg", "-version")
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
