@@ -72,6 +72,33 @@ class LicenseControllerTest {
     }
 
     @Test
+    @DisplayName("activate() en el entorno EMPAQUETADO (jpackage.app-path): lic junto al .exe")
+    void activarEnEntornoEmpaquetado() throws Exception {
+        Path fakeExeDir = licenseDir.resolve("mp3ConverterFree");
+        Files.createDirectories(fakeExeDir);
+        Path fakeExe = fakeExeDir.resolve("mp3ConverterFree.exe");
+        Files.writeString(fakeExe, "dummy");
+
+        String previous = System.getProperty("jpackage.app-path");
+        System.setProperty("jpackage.app-path", fakeExe.toAbsolutePath().toString());
+        try {
+            var state = LicenseController.activate("MP3C-KV2M-N5XT-8QRW", "hash-correo");
+            assertAll(
+                    () -> assertEquals(LicenseVerifier.Tier.PRO, state.tier()),
+                    () -> assertTrue(Files.exists(fakeExeDir.resolve("mp3converter.lic")),
+                            "la lic SE ESCRIBE junto al .exe del paquete jpackage"),
+                    () -> assertEquals(LicenseVerifier.Tier.PRO, LicenseVerifier.verify().tier())
+            );
+        } finally {
+            if (previous == null) {
+                System.clearProperty("jpackage.app-path");
+            } else {
+                System.setProperty("jpackage.app-path", previous);
+            }
+        }
+    }
+
+    @Test
     @DisplayName("activate() FALLA controlado: directorio inexistente => estado FREE, NO crash")
     void falloControlado() {
         overrideLicensesPath(licenseDir.resolve("carpeta-inexistente"));

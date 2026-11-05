@@ -53,9 +53,15 @@ public final class ActivationDialogV2 {
         dialog.getDialogPane().getButtonTypes().addAll(activar, copiar, cerrar);
 
         VBox content = new VBox(8);
+        Label instruccion = new Label("Para pasar a PRO AHORA MISMO, pulsa el botón "
+                + "«Activar contrato Pro» abajo: ahí se genera tu archivo "
+                + "mp3converter.lic y la aplicación cambia a PRO sin reiniciar.");
+        instruccion.setWrapText(true);
+        instruccion.setStyle("-fx-font-weight: bold;");
         content.getChildren().addAll(
                 new Label("Clave de activación:"),
                 codeLabel,
+                instruccion,
                 new Label("Sin base de datos, este código NO se recupera después: "
                         + "guárdalo ahora."));
 
