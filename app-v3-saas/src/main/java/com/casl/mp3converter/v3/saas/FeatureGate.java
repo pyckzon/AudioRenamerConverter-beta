@@ -4,31 +4,118 @@ import com.casl.mp3converter.core.Mp3ConversionService;
 import com.casl.mp3converter.core.QualityPolicy;
 import com.casl.mp3converter.core.WatermarkAsset;
 
+import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
+
 /**
- * Frente único de las reglas del tier en v3 (Fase 9): como en v2, la app
- * NUNCA decide por sí sola — siempre pregunta aquí. La diferencia es la
- * FUENTE DE VERDAD: ya no es la .lic local, sino la SUSCRIPCIÓN verificada
- * contra el backend SaaS (heartbeat + gracia offline de 7 días).
- * <p>
- * Fase 9.1: sólo el estado local y el branding. La conexión real al backend
- * (login → checkout web → token → heartbeat) llega en 9.2/9.3/9.4.
+ * Frente único de las reglas del tier en v3 (Fase 9). Igual que en v2, la app
+ * NUNCA decide por sí sola — siempre pregunta aquí. La FUENTE DE VERDAD es la
+ * SUSCRIPCIÓN verificada contra el backend SaaS:
+ * <ol>
+ *   <li>token de licencia local (saas/mp3converter.saas junto al .exe);</li>
+ *   <li>heartbeat contra el backend → ACTIVE renueva la gracia;</li>
+ *   <li>sin red → tolerancia offline: la gracia guardada (7 días) sostiene PRO;</li>
+ *   <li>INACTIVE (cancelada) / EXPIRED (>7 días sin heartbeat) → FREE y sin sesión.</li>
+ * </ol>
+ * Igual que v2: NUNCA lanza — cualquier fallo degrada a FREE con motivo auditable.
  */
 public final class FeatureGate {
 
-    /** Estado del modo Pro; 9.2+ lo enciende el backend (suscripción ACTIVE). */
+    /** Ventana de gracia offline del requisito del plan (misma que el backend). */
+    public static final Duration GRACE = Duration.ofDays(7);
+
+    /** Estado del modo Pro; lo enciende el backend (suscripción ACTIVE). */
     private static volatile boolean proEnabled = false;
+
+    /** Último motivo auditable del estado (para la UI/logs, nunca crash). */
+    private static volatile String lastReason = "sin sesión: modo gratuito";
+
+    /** Cliente inyectable (tests); por defecto apunta al backend por env/prop. */
+    private static SaasApiClient api = new SaasApiClient();
 
     private FeatureGate() {
     }
 
+    /** inyección para pruebas unitarias (package-private). */
+    static void setApiClient(SaasApiClient client) {
+        api = client;
+    }
+
     /**
-     * Al arrancar la app (equivalente del refreshFromLicenseFile de v2):
-     * 9.2+ leerá el token de licencia local, hará heartbeat contra el backend
-     * y aplicará la tolerancia offline. Por ahora degrada a FREE sin lanzar.
+     * Al abrir la app (equivalente del refreshFromLicenseFile de v2):
+     * sin sesión → FREE; con token → heartbeat; sin red → gracia offline.
      */
     public static void refreshAtStartup() {
-        // Fase 9.2: token local -> heartbeat -> ACTIVE/INACTIVE/EXPIRED + gracia.
+        var session = SaasSessionStore.load();
+        if (session.isEmpty()) {
+            setProEnabled(false);
+            lastReason = "sin sesión: modo gratuito";
+            return;
+        }
+        heartbeat(session.get());
+    }
+
+    /** Heartbeat contra el backend; INACTIVE/EXPIRED limpia la sesión. */
+    static void heartbeat(SaasSessionStore.Session session) {
+        try {
+            SaasApiClient.Heartbeat hb = api.heartbeat(session.token());
+            switch (hb.status()) {
+                case ACTIVE -> {
+                    setProEnabled(true);
+                    lastReason = "suscripción activa (gracia hasta " + hb.graceUntil() + ")";
+                    SaasSessionStore.save(new SaasSessionStore.Session(
+                            session.token(), hb.graceUntil(), session.email()));
+                }
+                case INACTIVE -> {
+                    setProEnabled(false);
+                    lastReason = "suscripción inactiva o cancelada";
+                    SaasSessionStore.clear();
+                }
+                case EXPIRED -> {
+                    setProEnabled(false);
+                    lastReason = "token vencido (más de 7 días sin verificar)";
+                    SaasSessionStore.clear();
+                }
+            }
+        } catch (IOException | InterruptedException offline) {
+            if (offline instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            // SIN RED: la gracia guardada sostiene PRO hasta su vencimiento:
+            if (session.graceUntil().isAfter(Instant.now())) {
+                setProEnabled(true);
+                lastReason = "sin conexión: gracia offline hasta " + session.graceUntil();
+            } else {
+                setProEnabled(false);
+                lastReason = "sin conexión y gracia vencida";
+            }
+        }
+    }
+
+    /** 9.3: tras el pago + issue, activa PRO EN CALIENTE y persiste la sesión. */
+    public static void activateWithToken(String token, Instant graceUntil, String email) {
+        setProEnabled(true);
+        lastReason = "suscripción activa (gracia hasta " + graceUntil + ")";
+        SaasSessionStore.save(new SaasSessionStore.Session(token, graceUntil, email));
+    }
+
+    /** Limpia la sesión local (logout/baja manual). */
+    public static void clearSession() {
+        SaasSessionStore.clear();
         setProEnabled(false);
+        lastReason = "sesión cerrada: modo gratuito";
+    }
+
+    public static String lastReason() {
+        return lastReason;
+    }
+
+    /** package-privado: reset completo para tests. */
+    static void resetForTests() {
+        SaasSessionStore.clear();
+        setProEnabled(false);
+        lastReason = "reset de pruebas";
     }
 
     public static boolean isPro() {
