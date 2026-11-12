@@ -23,7 +23,16 @@ public final class SchemaInitializer {
 
     /** Ejecuta el/los scripts una vez; seguro de re-invocar. */
     public static void ensureSchema(Connection connection) throws SQLException {
-        String script = readMigration("/db/migration/V1__init.sql");
+        ensureSchema(connection, "/db/migration/V1__init.sql");
+    }
+
+    /**
+     * Igual que {@link #ensureSchema(Connection)} pero con una migración
+     * arbitraria del classpath (la usa backend-saas con su esquema {@code saas}).
+     * ATENCIÓN: parte el script por punto y coma — sin punto y coma en comentarios.
+     */
+    public static void ensureSchema(Connection connection, String resource) throws SQLException {
+        String script = readMigration(resource);
         try (Statement statement = connection.createStatement()) {
             for (String sql : script.split(";")) {
                 String clean = sql.strip();
