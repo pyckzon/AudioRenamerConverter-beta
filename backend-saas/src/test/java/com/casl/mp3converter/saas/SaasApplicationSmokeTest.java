@@ -9,7 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -40,16 +40,15 @@ class SaasApplicationSmokeTest {
     @Test
     @DisplayName("la migración idempotente creó las 5 tablas del schema saas")
     void esquemaCreado() {
+        // Existencia de tablas (no conteo de filas: la BD en memoria con nombre
+        // se comparte entre contextos de test y puede contener datos de otros).
+        var names = jdbc.queryForList(
+                "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
+                        + "WHERE TABLE_SCHEMA = 'SAAS'", String.class);
         assertAll(
-                () -> assertEquals(0L, count("saas.users")),
-                () -> assertEquals(0L, count("saas.plans")),
-                () -> assertEquals(0L, count("saas.subscriptions")),
-                () -> assertEquals(0L, count("saas.payments")),
-                () -> assertEquals(0L, count("saas.license_tokens"))
+                () -> assertTrue(names.containsAll(java.util.List.of(
+                        "USERS", "PLANS", "SUBSCRIPTIONS", "PAYMENTS", "LICENSE_TOKENS")),
+                        "5 tablas del esquema saas, en minúscula H2 las ve en MAYÚSCULA: " + names)
         );
-    }
-
-    private long count(String table) {
-        return jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Long.class);
     }
 }

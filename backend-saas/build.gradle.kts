@@ -28,6 +28,13 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
 
+    // Auth (fase 8.2): JWT (issue/verify) y BCrypt para passwords.
+    // spring-security-crypto (BOM) trae BCrypt SIN todo el stack de Spring Security.
+    implementation("org.springframework.security:spring-security-crypto")
+    implementation("io.jsonwebtoken:jjwt-api:0.12.6")
+    runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
+    runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
+
     // Drivers: H2 es el default de desarrollo; Postgres entra por env en prod.
     // (spring-boot-dependencies ya administra ambas versiones)
     runtimeOnly("com.h2database:h2")
