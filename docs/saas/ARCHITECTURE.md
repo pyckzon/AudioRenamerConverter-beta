@@ -1,6 +1,11 @@
 # MP3Converter SaaS v3.0.0 — Borrador arquitectónico (Fase 7)
 
-> **Estado:** solo diseño. Nada de este documento está implementado todavía.
+> **Estado:** la Fase 8 ya IMPLEMENTÓ el backend (8.1–8.5, commits en el repo):
+> auth JWT, suscripciones, checkout mock, license issue + heartbeat con gracia
+> de 7 días, y el E2E del ciclo completo — todo contra el esquema portable
+> `saas.*` (H2 en dev / Postgres Supabase por env). Lo que sigue según este
+> documento: app-v3 (FeatureGate por suscripción), gateways reales y deploy.
+> El diseño de negocio queda EXACTAMENTE como fue especificado abajo.
 > Este es el documento que exige el plan maestro (Fase 7) antes de empezar:
 > modelo de negocio, contratos de API, tablas, ciclo de vida de la suscripción
 > con tolerancia offline, decisión de infraestructura y plan de arranque de

@@ -9,7 +9,7 @@ ffmpeg externo vía ProcessBuilder):
 | `app-v1-desktop` | MP3Converter Desktop | 1.0.0 | Activo (estado histórico, congelado) |
 | `app-v2-freemium` | MP3Converter Freemium — pay-to-pro | 2.0.0 | **Activo (Fases 0–6 completas)** |
 | `app-v3-saas` | MP3Converter SaaS (suscripción) | 3.0.0 | Borrador (`docs/saas/ARCHITECTURE.md`, Fase 7) |
-| `backend-saas` | Backend SaaS (Spring Boot 3.x) | 3.0.0 | **Stub vacío** en el build (Fase 7) |
+| `backend-saas` | Backend SaaS (Spring Boot 3.x) | 3.0.0 | **En construcción (Fase 8: auth, facturación y licencias implementados)** |
 
 ## Requisitos
 - Para compilar: **Java 21** (JDK: <https://adoptium.net/>).
@@ -112,7 +112,7 @@ mp3Converter/
 ├── core/                  ← lib compartida (conversión + licencias + pago + DB cifrada)
 ├── app-v1-desktop/        ← Proyecto 1: MP3Converter Desktop v1.0.0 (JavaFX + jpackage)
 ├── app-v2-freemium/       ← Proyecto 2: v2.0.0 pay-to-pro (compra→activación→PRO)
-├── backend-saas/          ← Proyecto 3: stub Spring Boot del SaaS (Fase 7, vacío)
+├── backend-saas/          ← Proyecto 3: backend SaaS real (Fase 8: auth JWT, suscripciones, licencias)
 │                            + docs/saas/ARCHITECTURE.md (modelo de suscripción)
 ├── docs/                  ← PLAN_MAESTRO.md, criptografia.md, saas/
 ├── parked/                ← código aparcado (no entra en el build)
@@ -120,6 +120,47 @@ mp3Converter/
 ├── settings.gradle.kts
 └── build.gradle.kts       ← raíz (multi-módulo Gradle)
 ```
+
+## Backend SaaS (Fase 8): `backend-saas` (Spring Boot 3.x)
+
+El borrador de la Fase 7 ya es código real. Endpoints implementados y probados
+(spring-boot-starter-test + MockMvc, mismo esquema `saas.*` en H2 y Postgres):
+
+| Endpoint | Auth | Estado |
+|----------|------|--------|
+| `GET  /api/health` | pública | ✅ 8.1 |
+| `POST /api/auth/register` | pública | ✅ 8.2 (BCrypt, dedupe por `email_hash`, 409) |
+| `POST /api/auth/login` | pública | ✅ 8.2 (JWT 15 min, 401) |
+| `GET/POST /api/subscriptions` | JWT | ✅ 8.3 (listar / cancelar) |
+| `POST /api/payments/checkout` | JWT | ✅ 8.3 (gateway MOCK; Stripe/MercadoPago plug-in) |
+| `POST /api/payments/webhook` | gateway | ✅ 8.3 (PAID → suscripción ACTIVE, idempotente) |
+| `POST /api/license/issue` | JWT | ✅ 8.4 (token 7 días, BD guarda SOLO su HMAC) |
+| `POST /api/license/heartbeat` | token | ✅ 8.4 (gracia 7 días; INACTIVE/EXPIRED → app a FREE) |
+
+E2E del ciclo completo: `SubscriptionLifecycleE2ETest` (fase 8.5).
+
+### Cómo ejecutarlo
+
+```bash
+./gradlew :backend-saas:bootRun   # default: H2 en memoria (dev), puerto 8080
+./gradlew :backend-saas:test      # suite completa (contrato + E2E)
+```
+
+Variables de entorno (nunca hardcoded, igual filosofía que `SUPABASE_*`):
+
+```powershell
+$env:SAAS_DB_URL      = "jdbc:postgresql://aws-0-<region>.pooler.supabase.com:5432/postgres"
+$env:SAAS_DB_USER     = "postgres.<ref>"
+$env:SAAS_DB_PWD      = "<password>"
+$env:SAAS_JWT_SECRET  = "<secreto de producción, >=32 caracteres recomendado>"
+```
+
+Sin `SAAS_DB_*` → H2 en memoria (dev). Sin `SAAS_JWT_SECRET` → secreto
+**efímero** de desarrollo con aviso en log (los tokens mueren al reiniciar).
+Tablas en el schema dedicado `saas.*` (no chocan con `users`/`activations` de v2).
+
+Pendiente: integración con `app-v3` (FeatureGate por suscripción), gateways
+reales y deploy (Render/Railway/Fly). Detalles: `docs/saas/ARCHITECTURE.md`.
 
 ## Documentación adicional
 - Plan de acción completo (fases, características, pruebas y riesgos):

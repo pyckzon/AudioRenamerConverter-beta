@@ -153,6 +153,16 @@ Propuesta **"app-v3-saas"**, basada en v2:
 5. Documentación `docs/saas/ARCHITECTURE.md` + diagrama de secuencia del ciclo de vida de suscripción.
 - **Criterio:** documento de arquitectura + módulo `backend-saas` vacío (stubs mezclados en el build) y app-v3 lista para empezar cuando se decida.
 
+### Fase 8 — backend-saas real (post-plan, decidida con el usuario)
+Implementación del borrador de la Fase 7, sub-fases con commit propio:
+1. **8.1** Base Spring Boot real: BD portable H2 dev / Postgres Supabase por env (`SAAS_DB_*`), schema dedicado `saas.*` (5 tablas), reuso de `SchemaInitializer` de core, health-check, smoke test, Dockerfile.
+2. **8.2** Auth: `register` (BCrypt + dedupe `email_hash`, 409) y `login` (JWT 15 min, 401); secreto por env `SAAS_JWT_SECRET` (efímero en dev con aviso).
+3. **8.3** Facturación: seed de plans, `PaymentGatewaySaaS` + MockCheckoutGateway, checkout PENDING → webhook PAID → suscripción ACTIVE con `next_billing` (renueva, no duplica), cancel en caliente, filtro JWT en endpoints de negocio.
+4. **8.4** Licencia: `issue` (exige suscripción ACTIVE; token 24B, BD guarda solo su HMAC con `FieldCrypto.codeHash`) y `heartbeat` (autenticado con el token; renueva la gracia de 7 días; INACTIVE al cancelar; EXPIRED al vencer).
+5. **8.5** E2E del ciclo completo de suscripción (equivalente del test de Fase 6).
+6. **8.6** Documentación (este plan + README + estado en ARCHITECTURE.md).
+- **Criterio:** suite de `backend-saas` verde (contrato + E2E) y `gradlew check` completo en verde.
+
 ---
 
 ## 3. Estrategia de pruebas — el modelo de negocio demostrado con tests
