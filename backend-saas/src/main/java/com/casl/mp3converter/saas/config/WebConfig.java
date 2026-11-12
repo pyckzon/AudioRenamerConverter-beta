@@ -7,8 +7,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * FASE 8.3 — Registro del filtro JWT SÓLO en los endpoints de negocio
- * (auth y health quedan públicos, igual que el webhook que valida el gateway).
+ * FASE 8.3 — Registro del filtro JWT SÓLO en los endpoints de negocio que
+ * usan sesión (auth y health quedan públicos; el webhook valida el gateway;
+ * el HEARTBEAT se autentica con el TOKEN DE LICENCIA, no con JWT: es su
+ * propósito — la app lo usa en offline).
  */
 @Configuration
 public class WebConfig {
@@ -19,7 +21,7 @@ public class WebConfig {
         registration.addUrlPatterns(
                 "/api/subscriptions", "/api/subscriptions/*",
                 "/api/payments/checkout",
-                "/api/license/issue", "/api/license/heartbeat");
+                "/api/license/issue");
         registration.setOrder(1);
         return registration;
     }
