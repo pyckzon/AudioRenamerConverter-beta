@@ -213,6 +213,8 @@ register → checkout → webhook PAID → issue → PRO → heartbeat → cance
   `docs/PLAN_MAESTRO.md`.
 - Diseño criptográfico de la Fase 4/5 (por qué sal=correo y pepper=apellido,
   formato MPCL, hashes en BD): `docs/criptografia.md`.
+- Deploy del backend SaaS (Render/Docker + registro en BD real):
+  `docs/DEPLOY.md`.
 
 ## Licencia
 MIT (ver `LICENSE`).

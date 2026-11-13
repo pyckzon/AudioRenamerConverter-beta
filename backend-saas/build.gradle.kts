@@ -50,3 +50,26 @@ tasks.withType<JavaCompile> {
 tasks.withType<Test> {
     useJUnitPlatform()
 }
+
+// Unit tests: rápidos y deterministas (H2 en memoria).
+tasks.test {
+    useJUnitPlatform {
+        excludeTags("db-integration")
+    }
+}
+
+// DB integration test: Supabase REAL sólo con credenciales (env SAAS_DB_*),
+// skip automático sin ellas (mapa de pruebas, misma regla que core).
+val dbIntegrationTest = tasks.register<Test>("dbIntegrationTest") {
+    group = "verification"
+    description = "Ciclo SaaS completo contra Supabase/Postgres real (tag db-integration)."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags("db-integration")
+    }
+}
+
+tasks.check {
+    dependsOn(dbIntegrationTest)
+}

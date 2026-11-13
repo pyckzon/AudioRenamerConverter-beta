@@ -202,6 +202,27 @@ Ejecutada con el backend real de la Fase 8, sub-fases con commit propio:
   comportamiento de un "checkout hosted" de Stripe/MercadoPago. Test
   `BillingFlowTest.paginaCheckoutMock`. URL pública por prop `saas.public.url`.
 
+### Fase 10 - pasarela MOCK definitiva + registro en BD real + deploy (decisión del usuario)
+
+El usuario decidió: NO se integran Stripe/MercadoPago — la pasarela queda
+como MOCK definitiva; lo importante del proyecto es el **registro completo
+en la base de datos**. Sub-fases:
+1. **10.1** `SupabaseSaasLifecycleIntegrationTest` (tag `db-integration`,
+   tarea `backend-saas:dbIntegrationTest`): ciclo MOCK completo contra
+   Supabase REAL con asserts por usuario — pago PAID en `saas.payments`,
+   suscripción ACTIVE→CANCELED con `canceled_at`, token de licencia guardado
+   SÓLO como HMAC de 64 hex, password BCrypt, sin columnas de tarjeta. Skip
+   automático sin `SAAS_DB_*` (regla 4.5). Ejecutado en verde contra el
+   Supabase del usuario.
+2. **10.2** Deploy: validación local completa — `bootJar` + `docker build`
+   + `docker run` contra Supabase real con ciclo HTTP completo (register →
+   login → checkout → webhook PAID → issue → heartbeat ACTIVE). Guía paso a
+   paso para Render en `docs/DEPLOY.md` (env `SAAS_DB_*`, `SAAS_JWT_SECRET`,
+   `SAAS_PUBLIC_URL` → prop `saas.public.url` por relaxed binding;
+   `SAAS_API_URL` en la app para apuntar al despliegue).
+- **Criterio:** `backend-saas:dbIntegrationTest` verde contra Supabase real
+  y contenedor validado E2E — cumplido.
+
 ---
 
 ## 3. Estrategia de pruebas — el modelo de negocio demostrado con tests
