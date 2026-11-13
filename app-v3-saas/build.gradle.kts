@@ -40,6 +40,17 @@ javafx {
 dependencies {
     implementation(project(":core"))
 
+    // Fase 9.4: el E2E de la app arranca el backend REAL como proceso JVM hijo
+    // (java -cp con el runtime de :backend-saas) — HTTP de verdad sin acoplar
+    // Spring al module-info del módulo FX.
+    val backendCp by configurations.creating {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+    }
+    dependencies.add("backendCp", project(":backend-saas"))
+    // la resolución de :backend-saas pierde SU BOM: lo importamos aquí también:
+    dependencies.add("backendCp", platform("org.springframework.boot:spring-boot-dependencies:3.5.0"))
+
     val junitVersion = "5.12.1"
     val junitPlatformVersion = "1.12.1"
     testImplementation("org.junit.jupiter:junit-jupiter-api:${junitVersion}")
@@ -63,6 +74,16 @@ tasks.test {
 // Blackbox tests on classpath (same convention as core/app2, no module-path touch).
 tasks.compileTestJava {
     modularity.inferModulePath.set(false)
+}
+
+// Fase 9.4: el E2E lanza el backend REAL (proceso hijo) con el classpath de
+// runtime de :backend-saas, resuelto AQUÍ y pasado como system property.
+tasks.test {
+    val backendCp = configurations.getByName("backendCp")
+    doFirst {
+        systemProperty("saas.e2e.backend.classpath",
+                backendCp.resolve().joinToString(File.pathSeparator) { it.absolutePath })
+    }
 }
 
 jlink {

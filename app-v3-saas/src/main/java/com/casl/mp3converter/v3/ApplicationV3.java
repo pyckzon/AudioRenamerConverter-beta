@@ -18,16 +18,20 @@ import java.util.logging.Logger;
 public class ApplicationV3 extends Application {
     private static final Logger LOGGER = Logger.getLogger(ApplicationV3.class.getName());
 
+    /** Fase 9.4: daemon que re-verifica la suscripción cada ~24 h. */
+    private java.util.concurrent.ScheduledExecutorService heartbeatDaemon;
+
     @Override
     public void init() {
-        // Fase 9.2/9.4: aquí vivirá la verificación de suscripción/token al
-        // arrancar (heartbeat + gracia offline de 7 días). Mientras tanto,
-        // el tier inicial es FREE (nunca lanza, mismo espíritu que v2).
+        // Fase 9.2/9.4: el tier arranca desde la sesión local + heartbeat
+        // (suscripción ACTIVE + gracia offline de 7 días). Nunca lanza.
         try {
             com.casl.mp3converter.v3.saas.FeatureGate.refreshAtStartup();
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "No se pudo verificar la suscripción: modo gratuito", e);
         }
+        // y queda el daemon verificando en el fondo (ACTIVE/INACTIVE/EXPIRED):
+        heartbeatDaemon = com.casl.mp3converter.v3.saas.FeatureGate.startHeartbeatDaemon();
 
         // Last-resort safety net: log and warn instead of crashing silently.
         Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
@@ -61,6 +65,15 @@ public class ApplicationV3 extends Application {
             alert.setContentText("No se pudo cargar la interfaz de la aplicación:\n" + e);
             alert.showAndWait();
             Platform.exit();
+        }
+    }
+
+    @Override
+    public void stop() {
+        // Fase 9.4: el daemon de heartbeat es hilo daemon (no frena el cierre),
+        // pero se apaga limpio para no dejar el socket a medias:
+        if (heartbeatDaemon != null) {
+            heartbeatDaemon.shutdownNow();
         }
     }
 

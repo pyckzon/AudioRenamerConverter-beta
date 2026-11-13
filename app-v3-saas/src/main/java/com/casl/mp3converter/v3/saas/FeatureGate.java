@@ -48,6 +48,35 @@ public final class FeatureGate {
     }
 
     /**
+     * FASE 9.4 — Daemon de heartbeat: re-verifica la suscripción contra el
+     * backend cada ~24 h (y el arranque ya lo hizo {@link #refreshAtStartup}).
+     * Hilo daemon (no bloquea el cierre del exe), NUNCA lanza: un fallo de red
+     * sólo actualiza el estado con la tolerancia offline de la gracia.
+     * El TEST lo controla con el system property {@code mp3converter.saas.heartbeat.period}.
+     */
+    public static java.util.concurrent.ScheduledExecutorService startHeartbeatDaemon() {
+        long periodoMillis = Long.getLong("mp3converter.saas.heartbeat.period", 24L * 60 * 60 * 1000);
+        var daemon = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "saas-heartbeat");
+            t.setDaemon(true);
+            return t;
+        });
+        daemon.scheduleAtFixedRate(() -> {
+            try {
+                var session = SaasSessionStore.load();
+                if (session.isPresent()) {
+                    heartbeat(session.get());
+                }
+            } catch (Throwable fatal) {
+                // el daemon JAMÁS muere: log y sigue (no hay UI que lo reporte aquí)
+                java.util.logging.Logger.getLogger(FeatureGate.class.getName())
+                        .warning("heartbeat periódico falló: " + fatal);
+            }
+        }, periodoMillis, periodoMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
+        return daemon;
+    }
+
+    /**
      * Al abrir la app (equivalente del refreshFromLicenseFile de v2):
      * sin sesión → FREE; con token → heartbeat; sin red → gracia offline.
      */
