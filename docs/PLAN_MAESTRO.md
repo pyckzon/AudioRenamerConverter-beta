@@ -194,6 +194,13 @@ Ejecutada con el backend real de la Fase 8, sub-fases con commit propio:
 - **Criterio:** suite de `app-v3-saas` verde (FeatureGate, diálogo, E2E con
   backend real) y `gradlew check` completo en verde.
 - **Pendiente (v3):** gateways de pago reales y deploy del backend.
+- **Post-9.5 (prueba manual del usuario):** al pulsar "Ya completé el pago"
+  el issue devolvía 403 porque el webhook nunca se disparaba — el gateway
+  mock NO confirmaba solo. Fix: el checkout mock ahora apunta a una PÁGINA
+  del propio backend (`GET /mock-checkout/{externalId}`, con `/info` del
+  plan real) cuyo botón **Pagar** dispara el webhook — exactamente el
+  comportamiento de un "checkout hosted" de Stripe/MercadoPago. Test
+  `BillingFlowTest.paginaCheckoutMock`. URL pública por prop `saas.public.url`.
 
 ---
 

@@ -134,6 +134,7 @@ El borrador de la Fase 7 ya es código real. Endpoints implementados y probados
 | `POST /api/auth/login` | pública | ✅ 8.2 (JWT 15 min, 401) |
 | `GET/POST /api/subscriptions` | JWT | ✅ 8.3 (listar / cancelar) |
 | `POST /api/payments/checkout` | JWT | ✅ 8.3 (gateway MOCK; Stripe/MercadoPago plug-in) |
+| `GET  /mock-checkout/{id}` (+`/info`) | pública | ✅ Fase 9 manual: página de checkout mock servida por el backend; su botón "Pagar" dispara el webhook (simula el checkout hosted de la pasarela) |
 | `POST /api/payments/webhook` | gateway | ✅ 8.3 (PAID → suscripción ACTIVE, idempotente) |
 | `POST /api/license/issue` | JWT | ✅ 8.4 (token 7 días, BD guarda SOLO su HMAC) |
 | `POST /api/license/heartbeat` | token | ✅ 8.4 (gracia 7 días; INACTIVE/EXPIRED → app a FREE) |
@@ -159,6 +160,13 @@ $env:SAAS_JWT_SECRET  = "<secreto de producción, >=32 caracteres recomendado>"
 Sin `SAAS_DB_*` → H2 en memoria (dev). Sin `SAAS_JWT_SECRET` → secreto
 **efímero** de desarrollo con aviso en log (los tokens mueren al reiniciar).
 Tablas en el schema dedicado `saas.*` (no chocan con `users`/`activations` de v2).
+
+> **Nota (Fase 9, flujo manual):** el checkout mock apunta a
+> `GET /mock-checkout/{externalId}` del propio backend — una página que
+> simula el "checkout hosted" de la pasarela y cuyo botón **Pagar** dispara
+> el webhook que activa la suscripción. En producción esa página es la del
+> gateway real (Stripe/MercadoPago) y la URL pública se ajusta con la prop
+> `saas.public.url`.
 
 Pendiente: gateways de pago reales y deploy (Render/Railway/Fly). La
 integración con la app **ya está hecha** (Fase 9, sección siguiente).

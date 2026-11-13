@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -116,5 +117,54 @@ class BillingFlowTest {
                 .andExpect(jsonPath("$.canceled").value(Long.parseLong(subId)));
         mvc.perform(get("/api/subscriptions").header("Authorization", "Bearer " + bearer))
                 .andExpect(jsonPath("$[0].status").value("CANCELED"));
+    }
+
+    @Test
+    @DisplayName("Fase 9 manual: página de checkout mock con plan real + botón que dispara el webhook")
+    void paginaCheckoutMock() throws Exception {
+        String bearer = registerAndLogin();
+        MvcResult checkout = mvc.perform(post("/api/payments/checkout")
+                        .contentType(APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + bearer)
+                        .content("{\"planCode\":\"pro-anual\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        String body = checkout.getResponse().getContentAsString();
+        String externalId = body.replaceAll(".*\"externalId\":\"([^\"]+)\".*", "$1");
+        // la URL ya NO es ficticia: apunta a la página mock del propio backend:
+        String url = body.replaceAll(".*\"checkoutUrl\":\"([^\"]+)\".*", "$1");
+        assertTrue(url.endsWith("/mock-checkout/" + externalId),
+                "checkoutUrl = página del backend: " + url);
+
+        // la página muestra el plan REAL (info pública del pago):
+        mvc.perform(get("/mock-checkout/{externalId}/info", externalId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.planCode").value("pro-anual"))
+                .andExpect(jsonPath("$.amountCents").value(999_00))
+                .andExpect(jsonPath("$.currency").value("MXN"))
+                .andExpect(jsonPath("$.status").value("PENDING"));
+
+        // la página HTML contiene el externalId saneado y el flujo de webhook:
+        mvc.perform(get("/mock-checkout/{externalId}", externalId))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(externalId)))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "/api/payments/webhook")));
+
+        // externalId con caracteres extraños -> la página SANEÓ el id
+        // (Spring 404's para <,>; los puntos los elimina el sanitizador):
+        mvc.perform(get("/mock-checkout/{externalId}", externalId + ".."))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers
+                        .containsString(externalId + ".."))));
+
+        // info de un pago inexistente -> 404:
+        mvc.perform(get("/mock-checkout/{externalId}/info", "MOCK-no-existe"))
+                .andExpect(status().isNotFound());
+
+        // el ciclo completo sigue: "pagar" en la página = webhook -> ACTIVE:
+        mvc.perform(post("/api/payments/webhook").contentType(APPLICATION_JSON)
+                        .content("{\"externalId\":\"%s\",\"status\":\"PAID\"}".formatted(externalId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
     }
 }
