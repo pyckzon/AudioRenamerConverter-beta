@@ -76,11 +76,16 @@ public class ControllerV3 {
         progressBar.setProgress(0.0);
     }
 
-    /** Fase 9.3: abrirá el flujo de suscripción real (login → checkout web). */
+    /** Fase 9.3: abre el flujo real de suscripción (login → checkout web → token). */
     @FXML
     private void onBuyPro() {
-        showInformation("Suscripción Pro",
-                FeatureGate.buyNotice() + "\n(Fase 9.3: aquí se abrirá el flujo de suscripción)");
+        statusLabel.setText("Abriendo el flujo de suscripción...");
+        com.casl.mp3converter.v3.ui.SubscriptionDialogV3.show(ownerWindow(), () -> {
+            // Hot flip a PRO ya hecho por el diálogo; refresca la UI principal:
+            refreshTierUi();
+            statusLabel.setText("Suscripción activa: " + FeatureGate.lastReason());
+        });
+        statusLabel.setText("Listo.");
     }
 
     /** Refresca encabezado, pie, botón de compra y título según el tier VIGENTE. */

@@ -47,6 +47,22 @@ public class SaasApiClient {
         this.baseUrl = baseUrl;
     }
 
+    /** POST /api/auth/register → 201; 409 → IOException "ya registrado". */
+    public void register(String email, String password, String firstName, String lastName)
+            throws IOException, InterruptedException {
+        String body = "{\"email\":\"" + esc(email) + "\",\"password\":\"" + esc(password)
+                + "\",\"firstName\":\"" + esc(firstName)
+                + "\",\"lastName\":\"" + esc(lastName) + "\"}";
+        HttpResponse<String> res = post("/api/auth/register", body, null);
+        if (res.statusCode() == 201) {
+            return;
+        }
+        String motivo = res.statusCode() == 409 ? "el correo ya está registrado"
+                : extractString(res.body(), "error");
+        throw new IOException("registro falló (HTTP " + res.statusCode() + "): "
+                + (motivo == null ? "error de validación" : motivo));
+    }
+
     /** POST /api/auth/login → accessToken (JWT). 401 → IOException con motivo. */
     public String login(String email, String password) throws IOException, InterruptedException {
         String body = "{\"email\":\"" + esc(email) + "\",\"password\":\"" + esc(password) + "\"}";

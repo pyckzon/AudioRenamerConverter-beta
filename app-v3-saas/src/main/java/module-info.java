@@ -1,6 +1,7 @@
 module com.casl.mp3converter.app3 {
     requires com.casl.mp3converter.core;
     requires java.logging;
+    requires java.desktop;
     requires java.net.http;
     requires javafx.controls;
     requires javafx.fxml;

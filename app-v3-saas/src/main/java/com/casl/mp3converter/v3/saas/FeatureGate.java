@@ -42,6 +42,11 @@ public final class FeatureGate {
         api = client;
     }
 
+    /** Acceso del UI al cliente (mismo endpoint que usa el FeatureGate). */
+    public static SaasApiClient apiClient() {
+        return api;
+    }
+
     /**
      * Al abrir la app (equivalente del refreshFromLicenseFile de v2):
      * sin sesión → FREE; con token → heartbeat; sin red → gracia offline.
