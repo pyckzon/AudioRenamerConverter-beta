@@ -163,6 +163,38 @@ Implementación del borrador de la Fase 7, sub-fases con commit propio:
 6. **8.6** Documentación (este plan + README + estado en ARCHITECTURE.md).
 - **Criterio:** suite de `backend-saas` verde (contrato + E2E) y `gradlew check` completo en verde.
 
+### Fase 9 - app-v3-saas: fork de v2 con FeatureGate por suscripción (post-plan)
+
+Ejecutada con el backend real de la Fase 8, sub-fases con commit propio:
+1. **9.1** Fork `app-v2-freemium` → `app-v3-saas` (módulo `com.casl.mp3converter.app3`,
+   packages `v3[.saas|.ui]`): UI de conversión intacta con branding SaaS 3.0.0,
+   `FeatureGate` baseline FREE y hot flip igual que v2; CTA placeholder hasta 9.3.
+2. **9.2** Cliente SaaS + sesión: `SaasApiClient` (java.net.http puro: login,
+   checkout, issue, heartbeat; errores como datos) y `SaasSessionStore`
+   (`mp3converter.saas` junto al .exe: token + gracia, nunca password/JWT);
+   `FeatureGate` por SUSCRIPCIÓN: heartbeat ACTIVE/INACTIVE/EXPIRED +
+   tolerancia offline con la gracia de 7 días; tests contra un backend stub
+   del JDK (`com.sun.net.httpserver`).
+3. **9.3** Diálogo de suscripción real: `SubscriptionDialogV3` (crear cuenta/
+   login → checkout web abierta en el navegador con fallback de portapapeles →
+   "Ya completé el pago" → issue → PRO en caliente), aplicando TODAS las
+   lecciones de UX de la Fase 5 (botones consumen el evento, slot de estado
+   fijo, X funcional vía CANCEL_CLOSE oculto, sin modales anidados);
+   `SaasApiClient.register` + `FeatureGate.apiClient()` + wiring en
+   `ControllerV3.onBuyPro`; test de flujo headless del diálogo real.
+4. **9.4** Daemon de heartbeat (`startHeartbeatDaemon`, ~24 h, hilo daemon que
+   nunca lanza, arranque en `ApplicationV3.init()` y parada limpia en `stop()`)
+   + E2E `AppV3SaasLifecycleE2ETest` contra el backend REAL como proceso JVM
+   hijo (classpath de `:backend-saas`, H2): register → checkout → webhook PAID
+   → issue → PRO → heartbeat ACTIVE → cancel → INACTIVE → FREE. Lección
+   técnica: los tests se compilan parchados al módulo (plugin de
+   modularidad), así que Spring se mantiene FUERA del module-info de la app.
+5. **9.5** Documentación (este plan + README con la sección de app-v3 +
+   estado en `docs/saas/ARCHITECTURE.md`).
+- **Criterio:** suite de `app-v3-saas` verde (FeatureGate, diálogo, E2E con
+  backend real) y `gradlew check` completo en verde.
+- **Pendiente (v3):** gateways de pago reales y deploy del backend.
+
 ---
 
 ## 3. Estrategia de pruebas — el modelo de negocio demostrado con tests

@@ -8,8 +8,8 @@ ffmpeg externo vía ProcessBuilder):
 |--------|----------|---------|--------|
 | `app-v1-desktop` | MP3Converter Desktop | 1.0.0 | Activo (estado histórico, congelado) |
 | `app-v2-freemium` | MP3Converter Freemium — pay-to-pro | 2.0.0 | **Activo (Fases 0–6 completas)** |
-| `app-v3-saas` | MP3Converter SaaS (suscripción) | 3.0.0 | Borrador (`docs/saas/ARCHITECTURE.md`, Fase 7) |
-| `backend-saas` | Backend SaaS (Spring Boot 3.x) | 3.0.0 | **En construcción (Fase 8: auth, facturación y licencias implementados)** |
+| `app-v3-saas` | MP3Converter SaaS (suscripción) | 3.0.0 | **Activo (Fase 9: 9.1–9.4 implementadas)** |
+| `backend-saas` | Backend SaaS (Spring Boot 3.x) | 3.0.0 | **Activo (Fase 8 completa: auth, facturación y licencias)** |
 
 ## Requisitos
 - Para compilar: **Java 21** (JDK: <https://adoptium.net/>).
@@ -112,6 +112,7 @@ mp3Converter/
 ├── core/                  ← lib compartida (conversión + licencias + pago + DB cifrada)
 ├── app-v1-desktop/        ← Proyecto 1: MP3Converter Desktop v1.0.0 (JavaFX + jpackage)
 ├── app-v2-freemium/       ← Proyecto 2: v2.0.0 pay-to-pro (compra→activación→PRO)
+├── app-v3-saas/           ← Proyecto 3 (app): v3.0.0 SaaS (Fase 9: suscripción + heartbeat)
 ├── backend-saas/          ← Proyecto 3: backend SaaS real (Fase 8: auth JWT, suscripciones, licencias)
 │                            + docs/saas/ARCHITECTURE.md (modelo de suscripción)
 ├── docs/                  ← PLAN_MAESTRO.md, criptografia.md, saas/
@@ -159,8 +160,45 @@ Sin `SAAS_DB_*` → H2 en memoria (dev). Sin `SAAS_JWT_SECRET` → secreto
 **efímero** de desarrollo con aviso en log (los tokens mueren al reiniciar).
 Tablas en el schema dedicado `saas.*` (no chocan con `users`/`activations` de v2).
 
-Pendiente: integración con `app-v3` (FeatureGate por suscripción), gateways
-reales y deploy (Render/Railway/Fly). Detalles: `docs/saas/ARCHITECTURE.md`.
+Pendiente: gateways de pago reales y deploy (Render/Railway/Fly). La
+integración con la app **ya está hecha** (Fase 9, sección siguiente).
+Detalles: `docs/saas/ARCHITECTURE.md`.
+
+## App SaaS (Fase 9): `app-v3-saas` (JavaFX + jpackage)
+
+Fork de `app-v2-freemium` (misma UI de conversión) con el tier controlado por
+**SUSCRIPCIÓN** en lugar de la `.lic` local. El free mantiene las reglas de v2
+(92 kbps CBR + watermark audible + .opus bloqueado); el Pro se activa con una
+suscripción ACTIVE verificada en línea:
+
+| Pieza | Rol (Fase 9) |
+|-------|--------------|
+| `v3.saas.FeatureGate` | Frente único del tier: heartbeat → ACTIVE/INACTIVE/EXPIRED + **gracia offline de 7 días**; hot flip como en v2. |
+| `v3.saas.SaasApiClient` | Cliente HTTP puro `java.net.http` (login/register/checkout/issue/heartbeat); errores como datos, nunca silenciosos. |
+| `v3.saas.SaasSessionStore` | Sesión local `mp3converter.saas` junto al .exe: token + ventana de gracia + correo. **Nunca guarda password ni JWT.** |
+| `v3.ui.SubscriptionDialogV3` | Crear cuenta/login → checkout en el navegador (la tarjeta nunca pasa por la app) → "Ya completé el pago" → token → PRO en caliente. |
+| `ApplicationV3` | Heartbeat al arrancar + **daemon** que re-verifica cada ~24 h (hilo daemon, nunca lanza). |
+
+### Cómo ejecutarlo
+
+```bash
+./gradlew :app-v3-saas:test            # FeatureGate, diálogo y E2E con backend REAL (proceso hijo)
+./gradlew :app-v3-saas:jpackageImage   # build/mp3ConverterSaaS/mp3ConverterSaaS.exe
+```
+
+Configuración (nunca hardcoded):
+
+```powershell
+# URL del backend (default: http://localhost:8080)
+$env:SAAS_API_URL = "https://tu-backend-saas.onrender.com"
+# override para tests/depuración:
+-Dmp3converter.saas.api=http://localhost:8080
+-Dmp3converter.saas.session=C:\ruta\mp3converter.saas   # ruta de la sesión local
+```
+
+E2E con backend real: `AppV3SaasLifecycleE2ETest` arranca `backend-saas` en un
+proceso JVM hijo (H2 en memoria) y recorre el ciclo completo por HTTP:
+register → checkout → webhook PAID → issue → PRO → heartbeat → cancel → FREE.
 
 ## Documentación adicional
 - Plan de acción completo (fases, características, pruebas y riesgos):
