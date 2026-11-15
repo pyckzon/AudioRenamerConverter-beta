@@ -1,220 +1,191 @@
 # mp3Converter — Portfolio multi-proyecto
 
-Un solo repositorio Gradle con 3 proyectos Java del mismo negocio de audio, cada uno
-en su fase de evolución. Todos comparten la lógica de conversión (módulo `core`,
-ffmpeg externo vía ProcessBuilder):
+> **English version:** [README_EN.md](README_EN.md)
 
-| Módulo | Proyecto | Versión | Estado |
-|--------|----------|---------|--------|
-| `app-v1-desktop` | MP3Converter Desktop | 1.0.0 | Activo (estado histórico, congelado) |
-| `app-v2-freemium` | MP3Converter Freemium — pay-to-pro | 2.0.0 | **Activo (Fases 0–6 completas)** |
-| `app-v3-saas` | MP3Converter SaaS (suscripción) | 3.0.0 | **Activo (Fase 9: 9.1–9.4 implementadas)** |
-| `backend-saas` | Backend SaaS (Spring Boot 3.x) | 3.0.0 | **Activo (Fase 8 completa: auth, facturación y licencias)** |
+Un solo repositorio Gradle con 3 proyectos Java del mismo negocio de audio, cada
+uno en su fase de evolución. Todos comparten la lógica de conversión (módulo
+`core`, ffmpeg externo vía ProcessBuilder).
 
-## Requisitos
-- Para compilar: **Java 21** (JDK: <https://adoptium.net/>).
-- Para convertir: **ffmpeg** en el PATH (`winget install ffmpeg`).
-- Los ejecutables `.exe` (jpackage) son autocontenidos: **no requieren Java instalado**.
+## ⚠️ Aviso: proyecto de portfolio
 
-## Proyecto 1 — MP3Converter Desktop v1.0.0
-Conversor WAV/AIFF/FLAC/M4A/OGG/WMA a MP3 con VBR de alta calidad (`-q:a 2`),
-sin marca de agua ni restricciones. Es el estado histórico del producto: se
-construye y ejecuta, pero no recibe cambios.
+Este repositorio es un **proyecto de portfolio con fines de práctica personal**.
+No es software de producción ni un producto comercial:
 
+- La pasarela de pago es **MOCK** (simulada): aprueba siempre y **no procesa
+  dinero real**. Ningún dato de tarjeta se guarda jamás — ni en disco, ni en
+  base de datos, ni en logs.
+- Las claves de activación, licencias y suscripciones existen para demostrar el
+  diseño de software, no para cobrar por el producto.
+- No lo uses para gestionar pagos reales ni como base de un producto sin
+  adaptarlo primero (pasarela real, términos, privacidad, etc.).
+
+## ¿Qué hace el proyecto?
+
+Es un **conversor de audio a MP3 para escritorio (Windows/JavaFX)** que acepta
+WAV/AIFF/FLAC/M4A/OGG/WMA/.opus, delega la conversión a **ffmpeg** y controla la
+calidad de salida. Sobre esa base común se construyen tres "versiones de
+producto" que demuestran tres modelos de negocio distintos:
+
+| Módulo | Proyecto | Versión | Modelo | Estado |
+|--------|----------|---------|--------|--------|
+| `app-v1-desktop` | MP3Converter Desktop | 1.0.0 | Gratis, sin restricciones | Congelado (histórico) |
+| `app-v2-freemium` | MP3Converter Freemium | 2.0.0 | Freemium **pay-to-pro** (licencia local) | Completo |
+| `app-v3-saas` + `backend-saas` | MP3Converter SaaS | 3.0.0 | **Suscripción** (backend Spring Boot) | Completo |
+
+## Propósito y cambios entre versiones
+
+### v1.0.0 — Desktop (congelado)
+- **Propósito:** el punto de partida histórico: un conversor completo y sin
+  restricciones (VBR `-q:a 2`, sin marca de agua).
+- **Qué demuestra:** conversión real con ffmpeg, UI JavaFX, empaquetado
+  `jpackage` autocontenido (sin Java instalado).
+- **Estado:** no recibe cambios; sirve como referencia del "antes".
+
+### v2.0.0 — Freemium pay-to-pro
+- **Cambios respecto a v1:** introduce el modelo freemium sobre la misma UI:
+  - **Free:** calidad fija **92 kbps CBR** (nunca VBR), marca de agua audible
+    "mp3Converter" al inicio y fin de cada MP3, y los `.opus` se listan pero
+    requieren Pro.
+  - **Pro:** VBR completo, sin watermark, `.opus` habilitado.
+  - Flujo completo **compra → activación**: formulario de pago con validaciones
+    exactas (Luhn, CVV, fecha no vencida, nombres, dirección, teléfono),
+    pasarela mock, **clave de activación** y archivo de licencia
+    `mp3converter.lic` (binario MPCL cifrado AES-256-GCM + HMAC-SHA256).
+  - **PRO en caliente** (sin reiniciar) y licencia **por carpeta**
+    (multi-instancia: cada copia del exe tiene su propio estado).
+  - Persistencia opcional en **Supabase** con cifrado: `email_hash` (HMAC),
+    campos AES-256-GCM; **jamás plaintext** en la base de datos.
+
+### v3.0.0 — SaaS por suscripción
+- **Cambios respecto a v2:** la licencia local `.lic` desaparece; el tier Pro
+  ahora lo define una **suscripción activa en un backend real**:
+  - Backend **Spring Boot 3.x** (`backend-saas`): registro/login **JWT**,
+    suscripciones, checkout con página **mock** servida por el propio backend
+    (su botón "Pagar" dispara el webhook, imitando el checkout hosted de una
+    pasarela real), emisión de token de licencia y **heartbeat**.
+  - En la base de datos el token de licencia se guarda **solo como HMAC**;
+    passwords con BCrypt; el email solo como hash (el original cifrado AES).
+  - App (fork de v2): diálogo de suscripción (crear cuenta → checkout en el
+    navegador → PRO en caliente), **daemon de heartbeat** que re-verifica cada
+    ~24 h y **gracia offline de 7 días** si el backend no responde.
+  - La tarjeta **nunca pasa por la app**: el checkout se hace en el navegador.
+  - Verificado contra **Supabase real** (test de integración `db-integration`)
+    y validado en contenedor Docker de extremo a extremo.
+
+## Cómo compilar y ejecutar
+
+**Requisitos:** Java 21 (JDK: <https://adoptium.net/>) para compilar;
+**ffmpeg** en el PATH para convertir (`winget install ffmpeg`). Los `.exe` de
+jpackage son autocontenidos: **no requieren Java instalado**.
+
+### v1 — Desktop
 ```bash
 ./gradlew :app-v1-desktop:jpackageImage
 # exe: app-v1-desktop\build\jpackage\mp3Converter\mp3Converter.exe
+# o en desarrollo: ./gradlew :app-v1-desktop:run
 ```
 
-## Proyecto 2 — MP3Converter Freemium v2.0.0 (pay-to-pro)
-El modelo freemium demostrado end-to-end:
-
-**Free (sin licencia):**
-- Calidad fija **92 kbps CBR** (`-b:a 92k`, nunca VBR).
-- Marca de agua audible **"mp3Converter"** al inicio y al final de cada MP3.
-- Los `.opus` se listan pero requieren la versión Pro (ffmpeg nunca se invoca
-  para ellos) con CTA "Comprar versión Pro".
-
-**Pro (con licencia):**
-- VBR completo (`-q:a 2`), sin watermark, `.opus` habilitado.
-
-### Guía de activación
-1. "Comprar versión Pro" → formulario con validaciones exactas (tarjeta 16
-   dígitos + Luhn, CVV 3, `mm/AAAA` no vencido, nombres solo letras, dirección ≤70
-   con `#`, teléfono 10 dígitos + dropdown de país, correo).
-2. Pasarela **mock** (aprueba siempre, latencia simulada; los datos de tarjeta
-   viven solo en memoria y en logs solo `**** 1234`).
-3. Al aprobar se genera la **clave de activación** (persistida cifrada en
-   Supabase si hay credenciales; efímera en modo demo sin BD).
-4. "Copiar al portapapeles" (el cuadro permanece abierto) →
-   **"Activar contrato Pro"** → se escribe `mp3converter.lic` (binario MPCL con
-   AES-256-GCM + HMAC-SHA256) junto al `.exe`, aparece el mensaje de
-   agradecimiento y la app pasa a **PRO sin reiniciar**.
-5. Al reiniciar, la app lee la `.lic` de su carpeta y abre en PRO.
-6. Borrar la `.lic` devuelve la app a FREE.
-
-La licencia es **por carpeta** (multi-instancia): dos carpetas de exe pueden
-tener estados distintos sin interferir entre sí.
-
-### Arquitectura v2
+### v2 — Freemium
+```bash
+./gradlew :app-v2-freemium:jpackageImage
+# exe: app-v2-freemium\build\jpackage\mp3ConverterFree\mp3ConverterFree.exe
+# o en desarrollo: ./gradlew :app-v2-freemium:run
 ```
-core (Java, sin JavaFX)
-├── conversion:  Mp3ConversionService + QualityPolicy (92k CBR / VBR) + watermark
-├── license:     LicenseCodec (MPCL binario), LicenseVerifier, LicenseController,
-│                FieldCrypto (PBKDF2 sal=correo, pepper=apellido), ActivationCodeGenerator
-├── payment:     PaymentValidator (reglas exactas 2.5), PaymentGateway + MockPaymentGateway,
-│                PaymentFlow -> PurchaseOutcome (perfil en memoria, jamás persistido)
-└── db:          DatabaseConfig (env SUPABASE_DB_*), UserRepository, ActivationRepository
-                  (hashes HMAC + AES; jamás plaintext en BD)
+- Sin licencia arranca en **Free**. "Comprar versión Pro" → formulario →
+  pasarela mock → **copiar clave** → "Activar contrato Pro" → PRO al instante.
+- La `mp3converter.lic` vive junto al exe; **borrarla = volver a Free**.
+- Empaquetado alternativo: `./build-exe.ps1 -App v2` (o `build-exe.bat` para v1).
 
-app-v2-freemium (JavaFX)
-└── FeatureGate (tier desde .lic, hot flip), ControllerV2 (fluye compra→activación),
-    PaymentDialogV2 / ActivationDialogV2 (TextFormatters sin carets rotos)
+### v3 — SaaS (app + backend)
+```bash
+# 1) backend (H2 en memoria por defecto, puerto 8080):
+./gradlew :backend-saas:bootRun
+# 2) app:
+./gradlew :app-v3-saas:jpackageImage
+# exe: app-v3-saas\build\jpackage\mp3ConverterSaaS\mp3ConverterSaaS.exe
+# o en desarrollo: ./gradlew :app-v3-saas:run
 ```
+- Por defecto la app apunta a `http://localhost:8080`; para un backend
+  desplegado: `$env:SAAS_API_URL = "https://tu-backend.onrender.com"`.
+- Con credenciales reales (opcionales) el backend usa Supabase/Postgres:
+  ```powershell
+  $env:SAAS_DB_URL     = "jdbc:postgresql://aws-0-<region>.pooler.supabase.com:5432/postgres"
+  $env:SAAS_DB_USER    = "postgres.<ref>"
+  $env:SAAS_DB_PWD     = "<password>"
+  $env:SAAS_JWT_SECRET = "<secreto fijo, >=32 caracteres>"
+  ```
+  Sin `SAAS_DB_*` → H2 en memoria (dev). Guía de deploy:
+  [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
-## Base de datos: Supabase (opcional)
-La persistencia (usuarios + códigos de activación cifrados) usa **Supabase
-Postgres**. Sin credenciales la app funciona y guarda el código con marca
-"efímero" (no se recupera después). Las pruebas contra la base real se omiten
-automáticamente si no hay variables:
-
+### Base de datos (v2, opcional)
 ```powershell
 $env:SUPABASE_DB_URL  = "jdbc:postgresql://db.<proyecto>.supabase.co:5432/postgres?sslmode=require"
 $env:SUPABASE_DB_USER = "postgres"
 $env:SUPABASE_DB_PWD  = "<password del proyecto>"
 ```
+Sin credenciales todo funciona igual (código de activación "efímero").
 
-Variante por system properties para pruebas: `mp3converter.db.url/user/pwd`.
-Detalle criptográfico completo: `docs/criptografia.md`.
-
-## Comandos
+## Pruebas
 ```bash
 ./gradlew test              # unitarios de todos los módulos (rápidos)
 ./gradlew check             # unitarios + integración (ffmpeg real) + db-integration
 ./gradlew dbIntegrationTest # SOLO pruebas contra Supabase real (tag db-integration)
+```
+Las pruebas de BD e integración se **omiten automáticamente** sin las variables
+de entorno correspondientes.
 
-./gradlew :app-v2-freemium:jpackageImage   # .exe v2 (autocontenido, sin Java)
-./build-exe.bat                            # variante por defecto (v1)
-./build-exe.ps1 -App v2                    # empaquetado por variante (v1|v2)
+## Arquitecturas (resumen)
+
+**v2:**
+```
+core (Java, sin JavaFX)
+├── conversion:  Mp3ConversionService + QualityPolicy (92k CBR / VBR) + watermark
+├── license:     LicenseCodec (MPCL), LicenseVerifier, LicenseController,
+│                FieldCrypto (PBKDF2 sal=correo, pepper=apellido), ActivationCodeGenerator
+├── payment:     PaymentValidator, PaymentGateway + MockPaymentGateway, PaymentFlow
+└── db:          DatabaseConfig (env SUPABASE_DB_*), UserRepository, ActivationRepository
+
+app-v2-freemium (JavaFX)
+└── FeatureGate (tier desde .lic, hot flip), ControllerV2, PaymentDialogV2 / ActivationDialogV2
 ```
 
-Ejecutables:
-- v1: `app-v1-desktop\build\jpackage\mp3Converter\mp3Converter.exe`
-- v2: `app-v2-freemium\build\jpackage\mp3ConverterFree\mp3ConverterFree.exe`
-  (la `mp3converter.lic` vive junto a este exe; borrarla = volver a FREE)
+**v3:**
+```
+backend-saas (Spring Boot 3.x, schema saas.*)
+├── auth:       register/login (BCrypt + JWT 15 min)
+├── billing:    checkout MOCK + webhook (PAID → ACTIVE, idempotente)
+└── license:    issue (token 7 días; BD guarda SOLO su HMAC) + heartbeat (gracia 7 días)
 
-Nota: `jpackageImage` borra la carpeta del exe — si la `.lic` existía, hay que
-volver a activar (o no incluirla para probar el flujo de compra desde cero).
+app-v3-saas (JavaFX, fork de v2)
+├── FeatureGate        tier por suscripción + gracia offline, hot flip
+├── SaasApiClient      cliente HTTP puro (login/register/checkout/issue/heartbeat)
+├── SaasSessionStore   sesión local (token de licencia + correo; NUNCA password ni JWT)
+└── SubscriptionDialogV3  cuenta → checkout en navegador → PRO en caliente
+```
 
 ## Estructura del repositorio
 ```
 mp3Converter/
 ├── core/                  ← lib compartida (conversión + licencias + pago + DB cifrada)
-├── app-v1-desktop/        ← Proyecto 1: MP3Converter Desktop v1.0.0 (JavaFX + jpackage)
-├── app-v2-freemium/       ← Proyecto 2: v2.0.0 pay-to-pro (compra→activación→PRO)
-├── app-v3-saas/           ← Proyecto 3 (app): v3.0.0 SaaS (Fase 9: suscripción + heartbeat)
-├── backend-saas/          ← Proyecto 3: backend SaaS real (Fase 8: auth JWT, suscripciones, licencias)
-│                            + docs/saas/ARCHITECTURE.md (modelo de suscripción)
-├── docs/                  ← PLAN_MAESTRO.md, criptografia.md, saas/
+├── app-v1-desktop/        ← v1.0.0 Desktop (JavaFX + jpackage, congelado)
+├── app-v2-freemium/       ← v2.0.0 pay-to-pro (compra → activación → PRO)
+├── app-v3-saas/           ← v3.0.0 app SaaS (suscripción + heartbeat)
+├── backend-saas/          ← v3.0.0 backend SaaS (Spring Boot: auth, billing, licencias)
+├── docs/                  ← PLAN_MAESTRO.md, criptografia.md, DEPLOY.md, saas/
 ├── parked/                ← código aparcado (no entra en el build)
 ├── build-exe.bat / build-exe.ps1   ← empaquetado por variante (v1|v2)
 ├── settings.gradle.kts
 └── build.gradle.kts       ← raíz (multi-módulo Gradle)
 ```
 
-## Backend SaaS (Fase 8): `backend-saas` (Spring Boot 3.x)
-
-El borrador de la Fase 7 ya es código real. Endpoints implementados y probados
-(spring-boot-starter-test + MockMvc, mismo esquema `saas.*` en H2 y Postgres):
-
-| Endpoint | Auth | Estado |
-|----------|------|--------|
-| `GET  /api/health` | pública | ✅ 8.1 |
-| `POST /api/auth/register` | pública | ✅ 8.2 (BCrypt, dedupe por `email_hash`, 409) |
-| `POST /api/auth/login` | pública | ✅ 8.2 (JWT 15 min, 401) |
-| `GET/POST /api/subscriptions` | JWT | ✅ 8.3 (listar / cancelar) |
-| `POST /api/payments/checkout` | JWT | ✅ 8.3 (gateway MOCK; Stripe/MercadoPago plug-in) |
-| `GET  /mock-checkout/{id}` (+`/info`) | pública | ✅ Fase 9 manual: página de checkout mock servida por el backend; su botón "Pagar" dispara el webhook (simula el checkout hosted de la pasarela) |
-| `POST /api/payments/webhook` | gateway | ✅ 8.3 (PAID → suscripción ACTIVE, idempotente) |
-| `POST /api/license/issue` | JWT | ✅ 8.4 (token 7 días, BD guarda SOLO su HMAC) |
-| `POST /api/license/heartbeat` | token | ✅ 8.4 (gracia 7 días; INACTIVE/EXPIRED → app a FREE) |
-
-E2E del ciclo completo: `SubscriptionLifecycleE2ETest` (fase 8.5).
-
-### Cómo ejecutarlo
-
-```bash
-./gradlew :backend-saas:bootRun   # default: H2 en memoria (dev), puerto 8080
-./gradlew :backend-saas:test      # suite completa (contrato + E2E)
-```
-
-Variables de entorno (nunca hardcoded, igual filosofía que `SUPABASE_*`):
-
-```powershell
-$env:SAAS_DB_URL      = "jdbc:postgresql://aws-0-<region>.pooler.supabase.com:5432/postgres"
-$env:SAAS_DB_USER     = "postgres.<ref>"
-$env:SAAS_DB_PWD      = "<password>"
-$env:SAAS_JWT_SECRET  = "<secreto de producción, >=32 caracteres recomendado>"
-```
-
-Sin `SAAS_DB_*` → H2 en memoria (dev). Sin `SAAS_JWT_SECRET` → secreto
-**efímero** de desarrollo con aviso en log (los tokens mueren al reiniciar).
-Tablas en el schema dedicado `saas.*` (no chocan con `users`/`activations` de v2).
-
-> **Nota (Fase 9, flujo manual):** el checkout mock apunta a
-> `GET /mock-checkout/{externalId}` del propio backend — una página que
-> simula el "checkout hosted" de la pasarela y cuyo botón **Pagar** dispara
-> el webhook que activa la suscripción. En producción esa página es la del
-> gateway real (Stripe/MercadoPago) y la URL pública se ajusta con la prop
-> `saas.public.url`.
-
-Pendiente: gateways de pago reales y deploy (Render/Railway/Fly). La
-integración con la app **ya está hecha** (Fase 9, sección siguiente).
-Detalles: `docs/saas/ARCHITECTURE.md`.
-
-## App SaaS (Fase 9): `app-v3-saas` (JavaFX + jpackage)
-
-Fork de `app-v2-freemium` (misma UI de conversión) con el tier controlado por
-**SUSCRIPCIÓN** en lugar de la `.lic` local. El free mantiene las reglas de v2
-(92 kbps CBR + watermark audible + .opus bloqueado); el Pro se activa con una
-suscripción ACTIVE verificada en línea:
-
-| Pieza | Rol (Fase 9) |
-|-------|--------------|
-| `v3.saas.FeatureGate` | Frente único del tier: heartbeat → ACTIVE/INACTIVE/EXPIRED + **gracia offline de 7 días**; hot flip como en v2. |
-| `v3.saas.SaasApiClient` | Cliente HTTP puro `java.net.http` (login/register/checkout/issue/heartbeat); errores como datos, nunca silenciosos. |
-| `v3.saas.SaasSessionStore` | Sesión local `mp3converter.saas` junto al .exe: token + ventana de gracia + correo. **Nunca guarda password ni JWT.** |
-| `v3.ui.SubscriptionDialogV3` | Crear cuenta/login → checkout en el navegador (la tarjeta nunca pasa por la app) → "Ya completé el pago" → token → PRO en caliente. |
-| `ApplicationV3` | Heartbeat al arrancar + **daemon** que re-verifica cada ~24 h (hilo daemon, nunca lanza). |
-
-### Cómo ejecutarlo
-
-```bash
-./gradlew :app-v3-saas:test            # FeatureGate, diálogo y E2E con backend REAL (proceso hijo)
-./gradlew :app-v3-saas:jpackageImage   # build/mp3ConverterSaaS/mp3ConverterSaaS.exe
-```
-
-Configuración (nunca hardcoded):
-
-```powershell
-# URL del backend (default: http://localhost:8080)
-$env:SAAS_API_URL = "https://tu-backend-saas.onrender.com"
-# override para tests/depuración:
--Dmp3converter.saas.api=http://localhost:8080
--Dmp3converter.saas.session=C:\ruta\mp3converter.saas   # ruta de la sesión local
-```
-
-E2E con backend real: `AppV3SaasLifecycleE2ETest` arranca `backend-saas` en un
-proceso JVM hijo (H2 en memoria) y recorre el ciclo completo por HTTP:
-register → checkout → webhook PAID → issue → PRO → heartbeat → cancel → FREE.
-
 ## Documentación adicional
 - Plan de acción completo (fases, características, pruebas y riesgos):
-  `docs/PLAN_MAESTRO.md`.
-- Diseño criptográfico de la Fase 4/5 (por qué sal=correo y pepper=apellido,
-  formato MPCL, hashes en BD): `docs/criptografia.md`.
-- Deploy del backend SaaS (Render/Docker + registro en BD real):
-  `docs/DEPLOY.md`.
+  [`docs/PLAN_MAESTRO.md`](docs/PLAN_MAESTRO.md).
+- Diseño criptográfico (por qué sal=correo y pepper=apellido, formato MPCL,
+  hashes en BD): [`docs/criptografia.md`](docs/criptografia.md).
+- Deploy del backend SaaS (Render/Docker):
+  [`docs/DEPLOY.md`](docs/DEPLOY.md).
+- Arquitectura SaaS: [`docs/saas/ARCHITECTURE.md`](docs/saas/ARCHITECTURE.md).
 
 ## Licencia
-MIT (ver `LICENSE`).
+MIT (ver [`LICENSE`](LICENSE)).
