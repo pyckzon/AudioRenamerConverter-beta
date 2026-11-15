@@ -153,6 +153,76 @@ Propuesta **"app-v3-saas"**, basada en v2:
 5. Documentación `docs/saas/ARCHITECTURE.md` + diagrama de secuencia del ciclo de vida de suscripción.
 - **Criterio:** documento de arquitectura + módulo `backend-saas` vacío (stubs mezclados en el build) y app-v3 lista para empezar cuando se decida.
 
+### Fase 8 — backend-saas real (post-plan, decidida con el usuario)
+Implementación del borrador de la Fase 7, sub-fases con commit propio:
+1. **8.1** Base Spring Boot real: BD portable H2 dev / Postgres Supabase por env (`SAAS_DB_*`), schema dedicado `saas.*` (5 tablas), reuso de `SchemaInitializer` de core, health-check, smoke test, Dockerfile.
+2. **8.2** Auth: `register` (BCrypt + dedupe `email_hash`, 409) y `login` (JWT 15 min, 401); secreto por env `SAAS_JWT_SECRET` (efímero en dev con aviso).
+3. **8.3** Facturación: seed de plans, `PaymentGatewaySaaS` + MockCheckoutGateway, checkout PENDING → webhook PAID → suscripción ACTIVE con `next_billing` (renueva, no duplica), cancel en caliente, filtro JWT en endpoints de negocio.
+4. **8.4** Licencia: `issue` (exige suscripción ACTIVE; token 24B, BD guarda solo su HMAC con `FieldCrypto.codeHash`) y `heartbeat` (autenticado con el token; renueva la gracia de 7 días; INACTIVE al cancelar; EXPIRED al vencer).
+5. **8.5** E2E del ciclo completo de suscripción (equivalente del test de Fase 6).
+6. **8.6** Documentación (este plan + README + estado en ARCHITECTURE.md).
+- **Criterio:** suite de `backend-saas` verde (contrato + E2E) y `gradlew check` completo en verde.
+
+### Fase 9 - app-v3-saas: fork de v2 con FeatureGate por suscripción (post-plan)
+
+Ejecutada con el backend real de la Fase 8, sub-fases con commit propio:
+1. **9.1** Fork `app-v2-freemium` → `app-v3-saas` (módulo `com.casl.mp3converter.app3`,
+   packages `v3[.saas|.ui]`): UI de conversión intacta con branding SaaS 3.0.0,
+   `FeatureGate` baseline FREE y hot flip igual que v2; CTA placeholder hasta 9.3.
+2. **9.2** Cliente SaaS + sesión: `SaasApiClient` (java.net.http puro: login,
+   checkout, issue, heartbeat; errores como datos) y `SaasSessionStore`
+   (`mp3converter.saas` junto al .exe: token + gracia, nunca password/JWT);
+   `FeatureGate` por SUSCRIPCIÓN: heartbeat ACTIVE/INACTIVE/EXPIRED +
+   tolerancia offline con la gracia de 7 días; tests contra un backend stub
+   del JDK (`com.sun.net.httpserver`).
+3. **9.3** Diálogo de suscripción real: `SubscriptionDialogV3` (crear cuenta/
+   login → checkout web abierta en el navegador con fallback de portapapeles →
+   "Ya completé el pago" → issue → PRO en caliente), aplicando TODAS las
+   lecciones de UX de la Fase 5 (botones consumen el evento, slot de estado
+   fijo, X funcional vía CANCEL_CLOSE oculto, sin modales anidados);
+   `SaasApiClient.register` + `FeatureGate.apiClient()` + wiring en
+   `ControllerV3.onBuyPro`; test de flujo headless del diálogo real.
+4. **9.4** Daemon de heartbeat (`startHeartbeatDaemon`, ~24 h, hilo daemon que
+   nunca lanza, arranque en `ApplicationV3.init()` y parada limpia en `stop()`)
+   + E2E `AppV3SaasLifecycleE2ETest` contra el backend REAL como proceso JVM
+   hijo (classpath de `:backend-saas`, H2): register → checkout → webhook PAID
+   → issue → PRO → heartbeat ACTIVE → cancel → INACTIVE → FREE. Lección
+   técnica: los tests se compilan parchados al módulo (plugin de
+   modularidad), así que Spring se mantiene FUERA del module-info de la app.
+5. **9.5** Documentación (este plan + README con la sección de app-v3 +
+   estado en `docs/saas/ARCHITECTURE.md`).
+- **Criterio:** suite de `app-v3-saas` verde (FeatureGate, diálogo, E2E con
+  backend real) y `gradlew check` completo en verde.
+- **Pendiente (v3):** gateways de pago reales y deploy del backend.
+- **Post-9.5 (prueba manual del usuario):** al pulsar "Ya completé el pago"
+  el issue devolvía 403 porque el webhook nunca se disparaba — el gateway
+  mock NO confirmaba solo. Fix: el checkout mock ahora apunta a una PÁGINA
+  del propio backend (`GET /mock-checkout/{externalId}`, con `/info` del
+  plan real) cuyo botón **Pagar** dispara el webhook — exactamente el
+  comportamiento de un "checkout hosted" de Stripe/MercadoPago. Test
+  `BillingFlowTest.paginaCheckoutMock`. URL pública por prop `saas.public.url`.
+
+### Fase 10 - pasarela MOCK definitiva + registro en BD real + deploy (decisión del usuario)
+
+El usuario decidió: NO se integran Stripe/MercadoPago — la pasarela queda
+como MOCK definitiva; lo importante del proyecto es el **registro completo
+en la base de datos**. Sub-fases:
+1. **10.1** `SupabaseSaasLifecycleIntegrationTest` (tag `db-integration`,
+   tarea `backend-saas:dbIntegrationTest`): ciclo MOCK completo contra
+   Supabase REAL con asserts por usuario — pago PAID en `saas.payments`,
+   suscripción ACTIVE→CANCELED con `canceled_at`, token de licencia guardado
+   SÓLO como HMAC de 64 hex, password BCrypt, sin columnas de tarjeta. Skip
+   automático sin `SAAS_DB_*` (regla 4.5). Ejecutado en verde contra el
+   Supabase del usuario.
+2. **10.2** Deploy: validación local completa — `bootJar` + `docker build`
+   + `docker run` contra Supabase real con ciclo HTTP completo (register →
+   login → checkout → webhook PAID → issue → heartbeat ACTIVE). Guía paso a
+   paso para Render en `docs/DEPLOY.md` (env `SAAS_DB_*`, `SAAS_JWT_SECRET`,
+   `SAAS_PUBLIC_URL` → prop `saas.public.url` por relaxed binding;
+   `SAAS_API_URL` en la app para apuntar al despliegue).
+- **Criterio:** `backend-saas:dbIntegrationTest` verde contra Supabase real
+  y contenedor validado E2E — cumplido.
+
 ---
 
 ## 3. Estrategia de pruebas — el modelo de negocio demostrado con tests

@@ -1,10 +1,19 @@
 # MP3Converter SaaS v3.0.0 — Borrador arquitectónico (Fase 7)
 
-> **Estado:** solo diseño. Nada de este documento está implementado todavía.
-> Este es el documento que exige el plan maestro (Fase 7) antes de empezar:
-> modelo de negocio, contratos de API, tablas, ciclo de vida de la suscripción
-> con tolerancia offline, decisión de infraestructura y plan de arranque de
-> `app-v3-saas`.
+> **Estado (Fase 9):** el backend (Fase 8, 8.1–8.5) y la APP `app-v3-saas`
+> (Fase 9, 9.1–9.4) están IMPLEMENTADOS. v3 ya no es borrador: el fork de v2
+> compila con branding SaaS 3.0.0, el `FeatureGate` decide por SUSCRIPCIÓN
+> (heartbeat + gracia offline de 7 días, sin .lic), el diálogo de suscripción
+> hace login → checkout web (la tarjeta nunca pasa por la app) → token → PRO
+> en caliente, y un daemon de heartbeat re-verifica cada ~24 h. El E2E de v3
+> (`AppV3SaasLifecycleE2ETest`) corre contra el backend REAL en un proceso
+> hijo: register → checkout → webhook PAID → issue → PRO → heartbeat → cancel
+> → FREE. Pendiente según este documento: gateways de pago reales y deploy
+> (Render/Railway/Fly). El diseño de negocio queda EXACTAMENTE como fue
+> especificado abajo. Este es el documento que exige el plan maestro (Fase 7)
+> antes de empezar: modelo de negocio, contratos de API, tablas, ciclo de vida
+> de la suscripción con tolerancia offline, decisión de infraestructura y plan
+> de arranque de `app-v3-saas`.
 
 ## 1. Modelo de negocio: licencia por suscripción
 
@@ -105,15 +114,26 @@ fecha de expiración para que un usuario no pueda estirarla editando archivos.
 
 ## 5. Frontend: app-v3-saas
 
-Reuse máximo de v2 (`app-v2-freemium`):
-- `FeatureGate` cambia su fuente de verdad: en vez de leer solo la `.lic`,
-  consulta el estado de suscripción (cacheado en un token local cifrado) y
-  aplica la tolerancia offline de 7 días; el flip a FREE al vencer es también
-  **en caliente, sin reiniciar**.
-- Los diálogos de pago (`PaymentDialogV2`) evolucionan: no se pide tarjeta en
-  la app, se abre el checkout web del gateway (Stripe Checkout / MercadoPago).
-- El diálogo de activación pasa a ser "Sesión/suscripción" (estado, próximo
-  cobro, cancelar).
+**IMPLEMENTADO (Fase 9, 9.1–9.4).** Fork de v2 (`app-v2-freemium`), módulo
+`com.casl.mp3converter.app3`, packages `com.casl.mp3converter.v3[.saas|.ui]`:
+- `FeatureGate` cambió su fuente de verdad: ya no lee la `.lic`; guarda el
+  token de licencia en `mp3converter.saas` (junto al .exe, nunca password/JWT)
+  y re-verifica con heartbeat + tolerancia offline de 7 días; el flip a FREE
+  al vencer es también **en caliente, sin reiniciar**.
+- `SubscriptionDialogV3` sustituye a `PaymentDialogV2`+`ActivationDialogV2`:
+  crear cuenta/login → el backend crea la sesión del gateway y la app ABRE EL
+  NAVEGADOR (la tarjeta NUNCA pasa por la app; fallback: copiar la URL al
+  portapapeles) → "Ya completé el pago" → `issue` → `activateWithToken` → PRO
+  en caliente. Lecciones de UX de la Fase 5 aplicadas (botones consumen el
+  evento, slot de estado fijo, X funcional, sin modales anidados).
+- `SaasApiClient`: cliente HTTP puro `java.net.http` (cero dependencias);
+  base URL por prop `mp3converter.saas.api` → env `SAAS_API_URL` →
+  `http://localhost:8080`.
+- `ApplicationV3.init()`: sesión local + heartbeat al arrancar, y un
+  **daemon** (`startHeartbeatDaemon`) re-verifica la suscripción cada ~24 h
+  en un hilo daemon que nunca lanza; `stop()` lo apaga.
+- E2E `AppV3SaasLifecycleE2ETest`: backend REAL como proceso JVM hijo
+  (classpath de `:backend-saas`), ciclo completo por HTTP.
 
 ## 6. Decisión de infraestructura (diferida)
 
@@ -128,12 +148,12 @@ Reuse máximo de v2 (`app-v2-freemium`):
 
 ## 7. Plan de arranque cuando se implemente
 
-1. Completar el stub `backend-saas`: `SaasApplication` + perfiles de Spring
-   (`dev` con H2, `prod` con Supabase JDBC) y Dockerfile para el deploy.
-2. Contratos de los 7 endpoints como tests `@SpringBootTest` con gateway mock.
-3. Migraciones SQL de las 4 tablas nuevas (revisión manual, sin Flyway si no
-   hace falta).
-4. bifurcar `app-v2-freemium` → `app-v3-saas` y solo sustituir la fuente de
-   verdad de `FeatureGate`.
-5. E2E análogo al de la Fase 6: suscripción → token → PRO en caliente →
-   offline 8 días → FREE; y cancelación → FREE inmediato online.
+1. ~~Completar el stub `backend-saas`~~ **hecho en Fase 8** (H2 dev / Supabase
+   por env, Dockerfile).
+2. ~~Contratos como tests `@SpringBootTest`~~ **hecho en Fase 8** (MockMvc).
+3. ~~Migraciones SQL de las tablas nuevas~~ **hecho en Fase 8**
+   (`db/migration/saas/V1__saas.sql`, portable BYTEA).
+4. ~~Fork v2 → v3 y sustituir la fuente de verdad de `FeatureGate`~~
+   **hecho en Fase 9** (9.1–9.4).
+5. ~~E2E análogo al de la Fase 6~~ **hecho en Fase 9.4**
+   (`AppV3SaasLifecycleE2ETest` contra backend real en proceso hijo).

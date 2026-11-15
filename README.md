@@ -8,8 +8,8 @@ ffmpeg externo vía ProcessBuilder):
 |--------|----------|---------|--------|
 | `app-v1-desktop` | MP3Converter Desktop | 1.0.0 | Activo (estado histórico, congelado) |
 | `app-v2-freemium` | MP3Converter Freemium — pay-to-pro | 2.0.0 | **Activo (Fases 0–6 completas)** |
-| `app-v3-saas` | MP3Converter SaaS (suscripción) | 3.0.0 | Borrador (`docs/saas/ARCHITECTURE.md`, Fase 7) |
-| `backend-saas` | Backend SaaS (Spring Boot 3.x) | 3.0.0 | **Stub vacío** en el build (Fase 7) |
+| `app-v3-saas` | MP3Converter SaaS (suscripción) | 3.0.0 | **Activo (Fase 9: 9.1–9.4 implementadas)** |
+| `backend-saas` | Backend SaaS (Spring Boot 3.x) | 3.0.0 | **Activo (Fase 8 completa: auth, facturación y licencias)** |
 
 ## Requisitos
 - Para compilar: **Java 21** (JDK: <https://adoptium.net/>).
@@ -112,7 +112,8 @@ mp3Converter/
 ├── core/                  ← lib compartida (conversión + licencias + pago + DB cifrada)
 ├── app-v1-desktop/        ← Proyecto 1: MP3Converter Desktop v1.0.0 (JavaFX + jpackage)
 ├── app-v2-freemium/       ← Proyecto 2: v2.0.0 pay-to-pro (compra→activación→PRO)
-├── backend-saas/          ← Proyecto 3: stub Spring Boot del SaaS (Fase 7, vacío)
+├── app-v3-saas/           ← Proyecto 3 (app): v3.0.0 SaaS (Fase 9: suscripción + heartbeat)
+├── backend-saas/          ← Proyecto 3: backend SaaS real (Fase 8: auth JWT, suscripciones, licencias)
 │                            + docs/saas/ARCHITECTURE.md (modelo de suscripción)
 ├── docs/                  ← PLAN_MAESTRO.md, criptografia.md, saas/
 ├── parked/                ← código aparcado (no entra en el build)
@@ -121,11 +122,99 @@ mp3Converter/
 └── build.gradle.kts       ← raíz (multi-módulo Gradle)
 ```
 
+## Backend SaaS (Fase 8): `backend-saas` (Spring Boot 3.x)
+
+El borrador de la Fase 7 ya es código real. Endpoints implementados y probados
+(spring-boot-starter-test + MockMvc, mismo esquema `saas.*` en H2 y Postgres):
+
+| Endpoint | Auth | Estado |
+|----------|------|--------|
+| `GET  /api/health` | pública | ✅ 8.1 |
+| `POST /api/auth/register` | pública | ✅ 8.2 (BCrypt, dedupe por `email_hash`, 409) |
+| `POST /api/auth/login` | pública | ✅ 8.2 (JWT 15 min, 401) |
+| `GET/POST /api/subscriptions` | JWT | ✅ 8.3 (listar / cancelar) |
+| `POST /api/payments/checkout` | JWT | ✅ 8.3 (gateway MOCK; Stripe/MercadoPago plug-in) |
+| `GET  /mock-checkout/{id}` (+`/info`) | pública | ✅ Fase 9 manual: página de checkout mock servida por el backend; su botón "Pagar" dispara el webhook (simula el checkout hosted de la pasarela) |
+| `POST /api/payments/webhook` | gateway | ✅ 8.3 (PAID → suscripción ACTIVE, idempotente) |
+| `POST /api/license/issue` | JWT | ✅ 8.4 (token 7 días, BD guarda SOLO su HMAC) |
+| `POST /api/license/heartbeat` | token | ✅ 8.4 (gracia 7 días; INACTIVE/EXPIRED → app a FREE) |
+
+E2E del ciclo completo: `SubscriptionLifecycleE2ETest` (fase 8.5).
+
+### Cómo ejecutarlo
+
+```bash
+./gradlew :backend-saas:bootRun   # default: H2 en memoria (dev), puerto 8080
+./gradlew :backend-saas:test      # suite completa (contrato + E2E)
+```
+
+Variables de entorno (nunca hardcoded, igual filosofía que `SUPABASE_*`):
+
+```powershell
+$env:SAAS_DB_URL      = "jdbc:postgresql://aws-0-<region>.pooler.supabase.com:5432/postgres"
+$env:SAAS_DB_USER     = "postgres.<ref>"
+$env:SAAS_DB_PWD      = "<password>"
+$env:SAAS_JWT_SECRET  = "<secreto de producción, >=32 caracteres recomendado>"
+```
+
+Sin `SAAS_DB_*` → H2 en memoria (dev). Sin `SAAS_JWT_SECRET` → secreto
+**efímero** de desarrollo con aviso en log (los tokens mueren al reiniciar).
+Tablas en el schema dedicado `saas.*` (no chocan con `users`/`activations` de v2).
+
+> **Nota (Fase 9, flujo manual):** el checkout mock apunta a
+> `GET /mock-checkout/{externalId}` del propio backend — una página que
+> simula el "checkout hosted" de la pasarela y cuyo botón **Pagar** dispara
+> el webhook que activa la suscripción. En producción esa página es la del
+> gateway real (Stripe/MercadoPago) y la URL pública se ajusta con la prop
+> `saas.public.url`.
+
+Pendiente: gateways de pago reales y deploy (Render/Railway/Fly). La
+integración con la app **ya está hecha** (Fase 9, sección siguiente).
+Detalles: `docs/saas/ARCHITECTURE.md`.
+
+## App SaaS (Fase 9): `app-v3-saas` (JavaFX + jpackage)
+
+Fork de `app-v2-freemium` (misma UI de conversión) con el tier controlado por
+**SUSCRIPCIÓN** en lugar de la `.lic` local. El free mantiene las reglas de v2
+(92 kbps CBR + watermark audible + .opus bloqueado); el Pro se activa con una
+suscripción ACTIVE verificada en línea:
+
+| Pieza | Rol (Fase 9) |
+|-------|--------------|
+| `v3.saas.FeatureGate` | Frente único del tier: heartbeat → ACTIVE/INACTIVE/EXPIRED + **gracia offline de 7 días**; hot flip como en v2. |
+| `v3.saas.SaasApiClient` | Cliente HTTP puro `java.net.http` (login/register/checkout/issue/heartbeat); errores como datos, nunca silenciosos. |
+| `v3.saas.SaasSessionStore` | Sesión local `mp3converter.saas` junto al .exe: token + ventana de gracia + correo. **Nunca guarda password ni JWT.** |
+| `v3.ui.SubscriptionDialogV3` | Crear cuenta/login → checkout en el navegador (la tarjeta nunca pasa por la app) → "Ya completé el pago" → token → PRO en caliente. |
+| `ApplicationV3` | Heartbeat al arrancar + **daemon** que re-verifica cada ~24 h (hilo daemon, nunca lanza). |
+
+### Cómo ejecutarlo
+
+```bash
+./gradlew :app-v3-saas:test            # FeatureGate, diálogo y E2E con backend REAL (proceso hijo)
+./gradlew :app-v3-saas:jpackageImage   # build/mp3ConverterSaaS/mp3ConverterSaaS.exe
+```
+
+Configuración (nunca hardcoded):
+
+```powershell
+# URL del backend (default: http://localhost:8080)
+$env:SAAS_API_URL = "https://tu-backend-saas.onrender.com"
+# override para tests/depuración:
+-Dmp3converter.saas.api=http://localhost:8080
+-Dmp3converter.saas.session=C:\ruta\mp3converter.saas   # ruta de la sesión local
+```
+
+E2E con backend real: `AppV3SaasLifecycleE2ETest` arranca `backend-saas` en un
+proceso JVM hijo (H2 en memoria) y recorre el ciclo completo por HTTP:
+register → checkout → webhook PAID → issue → PRO → heartbeat → cancel → FREE.
+
 ## Documentación adicional
 - Plan de acción completo (fases, características, pruebas y riesgos):
   `docs/PLAN_MAESTRO.md`.
 - Diseño criptográfico de la Fase 4/5 (por qué sal=correo y pepper=apellido,
   formato MPCL, hashes en BD): `docs/criptografia.md`.
+- Deploy del backend SaaS (Render/Docker + registro en BD real):
+  `docs/DEPLOY.md`.
 
 ## Licencia
 MIT (ver `LICENSE`).

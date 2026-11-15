@@ -50,7 +50,9 @@ class PurchaseToProFlowTest {
 
     @BeforeEach
     void setUp() {
-        String jdbcUrl = "jdbc:h2:mem:flow_" + System.nanoTime() + ";DB_CLOSE_DELAY=-1";
+        // MODE=PostgreSQL: la MISMA migración V1__init.sql (BYTEA) corre en
+        // H2 para tests y en Postgres real (Supabase) en producción:
+        String jdbcUrl = "jdbc:h2:mem:flow_" + System.nanoTime() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
         dbProvider = () -> DriverManager.getConnection(jdbcUrl);
 
         previousLicenseProperty = System.getProperty("mp3converter.license.path");

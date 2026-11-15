@@ -1,7 +1,7 @@
-// backend-saas: STUB de la Fase 7 (borrador arquitectónico, sin implementar).
-// Solo declara la base Spring Boot 3.x y la clase de arranque; los endpoints
-// reales (auth JWT, subscriptions, checkout, license issue/heartbeat) se
-// implementaran cuando se decida, segun docs/saas/ARCHITECTURE.md.
+// backend-saas: FASE 8 en construcción (antes era el stub vacío de la Fase 7).
+// Base Spring Boot 3.x con BD portable (H2 dev en memoria / Postgres Supabase
+// por env) y reutilización de core (SchemaInitializer, FieldCrypto). Los
+// endpoints del contrato van llegando por sub-fase: ver docs/saas/ARCHITECTURE.md.
 plugins {
     java
     id("org.springframework.boot") version "3.5.0"
@@ -22,7 +22,24 @@ java {
 }
 
 dependencies {
+    // Lógica compartida del proyecto (esquema idempotente, cripto de campos):
+    implementation(project(":core"))
+
     implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-jdbc")
+
+    // Auth (fase 8.2): JWT (issue/verify) y BCrypt para passwords.
+    // spring-security-crypto (BOM) trae BCrypt SIN todo el stack de Spring Security.
+    implementation("org.springframework.security:spring-security-crypto")
+    implementation("io.jsonwebtoken:jjwt-api:0.12.6")
+    runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
+    runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
+
+    // Drivers: H2 es el default de desarrollo; Postgres entra por env en prod.
+    // (spring-boot-dependencies ya administra ambas versiones)
+    runtimeOnly("com.h2database:h2")
+    runtimeOnly("org.postgresql:postgresql")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 }
 
@@ -32,4 +49,27 @@ tasks.withType<JavaCompile> {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+// Unit tests: rápidos y deterministas (H2 en memoria).
+tasks.test {
+    useJUnitPlatform {
+        excludeTags("db-integration")
+    }
+}
+
+// DB integration test: Supabase REAL sólo con credenciales (env SAAS_DB_*),
+// skip automático sin ellas (mapa de pruebas, misma regla que core).
+val dbIntegrationTest = tasks.register<Test>("dbIntegrationTest") {
+    group = "verification"
+    description = "Ciclo SaaS completo contra Supabase/Postgres real (tag db-integration)."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags("db-integration")
+    }
+}
+
+tasks.check {
+    dependsOn(dbIntegrationTest)
 }

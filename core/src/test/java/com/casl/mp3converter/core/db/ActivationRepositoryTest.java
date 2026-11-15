@@ -35,7 +35,9 @@ class ActivationRepositoryTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        String jdbcUrl = "jdbc:h2:mem:repo_" + System.nanoTime() + ";DB_CLOSE_DELAY=-1";
+        // MODE=PostgreSQL: la MISMA migración V1__init.sql (BYTEA) corre en
+        // H2 para tests y en Postgres real (Supabase) en producción:
+        String jdbcUrl = "jdbc:h2:mem:repo_" + System.nanoTime() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
         provider = () -> DriverManager.getConnection(jdbcUrl);
         users = new UserRepository(provider);
         activations = new ActivationRepository(provider);
